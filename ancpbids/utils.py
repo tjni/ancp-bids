@@ -1,5 +1,6 @@
 import logging
 import os
+import sys
 
 FILE_READERS = {}
 FILE_WRITERS = {}
@@ -227,3 +228,10 @@ def convert_to_relative(dataset, path):
         path_segments = list(filter(lambda s: s != '', path_segments))
         path = os.path.join(*path_segments)
     return path
+
+def get_schema_by_version(schema_version):
+    schema_version = schema_version.replace('.', '_')
+    schema_name = f'ancpbids.model_v{schema_version}'
+    if schema_name in sys.modules:
+        schema = sys.modules[schema_name]
+        return schema

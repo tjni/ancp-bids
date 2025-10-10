@@ -107,7 +107,8 @@ class DatasetPopulationPlugin(DatasetPlugin):
 
             # Load contents based on lazy loading setting
             if self.options.lazy_loading:
-                mdfile.contents = lambda _mdfile=mdfile: _mdfile.load_contents()
+                # Use a proper method reference instead of lambda for pickling compatibility
+                mdfile.contents = mdfile.load_contents
             else:
                 mdfile.contents = mdfile.load_contents()
 
@@ -130,7 +131,8 @@ class DatasetPopulationPlugin(DatasetPlugin):
             newfile.update(file)
 
             if self.options.lazy_loading:
-                newfile.contents = lambda _newfile=newfile: _newfile.load_contents()
+                # Use a proper method reference instead of lambda for pickling compatibility
+                newfile.contents = newfile.load_contents
             else:
                 newfile.contents = newfile.load_contents()
 

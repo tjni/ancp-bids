@@ -44,6 +44,9 @@ class DatasetOptions(dict):
 
         Set to False to immediately load all metadata file contents into memory during dataset initialization."""
 
+    ignore_pickle_file: bool = False
+    """If the dataset has been previously made available as a pickle file '.ancpbids-dataset.pickle' at the root of the dataset folder, this option allows to ignore it by setting it to True."""
+
 
 def load_dataset(base_dir: str, options: Optional[DatasetOptions] = None):
     """Loads a dataset given its directory path on the file system.
@@ -69,6 +72,11 @@ def load_dataset(base_dir: str, options: Optional[DatasetOptions] = None):
     base_dir = str(base_dir)
     if not os.path.isdir(base_dir):
         raise ValueError("Invalid Directory")
+
+    if options is not None and not options.ignore_pickle_file and os.path.exists(
+            os.path.join(base_dir, plugins.plugin_pickle.ANCPBIDS_PICKLE_FILE)):
+        return unpickle_dataset(base_dir)
+
     schema = load_schema(base_dir)
     ds = schema.Dataset()
     ds._versioned_schema = schema
@@ -106,10 +114,8 @@ def load_schema(base_dir):
         ds_descr = utils.load_contents(ds_descr_path)
         if isinstance(ds_descr, dict) and 'BIDSVersion' in ds_descr:
             schema_version = ds_descr['BIDSVersion']
-            schema_version = schema_version.replace('.', '_')
-            schema_name = f'ancpbids.model_v{schema_version}'
-            if schema_name in sys.modules:
-                schema = sys.modules[schema_name]
+            schema = utils.get_schema_by_version(schema_version)
+            if schema is not None:
                 return schema
     # assume using the latest supported schema
     return model_latest
@@ -199,6 +205,7 @@ for pl in get_plugins(FileHandlerPlugin):
     pl.execute(utils.FILE_READERS, utils.FILE_WRITERS)
 
 from .pybids_compat import BIDSLayout
+from .plugins.plugin_pickle import pickle_dataset, unpickle_dataset
 
 select = Select
 any_of = AnyExpr
