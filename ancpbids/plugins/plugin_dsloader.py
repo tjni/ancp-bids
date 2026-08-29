@@ -1,25 +1,28 @@
 import fnmatch
 import inspect
-import os
 import re
 
 from .plugin_files_handlers import read_plain_text
 from .. import utils
 from ..plugin import DatasetPlugin, hook
 from ..model_base import *
+from ..vfs import resolve_vfs, split_rel_path
 
 
 @hook(ranking=0, system=True)
 class DatasetPopulationPlugin(DatasetPlugin):
 
-    def execute(self, dataset, schema):
+    def execute(self, dataset, schema, vfs=None, paths=None):
         base_dir = str(dataset.base_dir_)
         self.schema = schema
         self.options = dataset.options
+        self.vfs = resolve_vfs(vfs)
         self._load_bidsignore(base_dir)
 
-        # load file system structure
-        self._load_folder(dataset, base_dir, base_dir)
+        if paths is not None:
+            self._load_from_paths(dataset, paths)
+        else:
+            self._load_folder(dataset, base_dir, base_dir)
         # transform files to artifacts, i.e. files containing entities in their name
         self._convert_files_to_artifacts(dataset)
 
@@ -49,9 +52,9 @@ class DatasetPopulationPlugin(DatasetPlugin):
         if self.options.ignore:
             patterns = []
             if isinstance(self.options.ignore, bool):
-                bidsignore_file = os.path.join(base_dir, ".bidsignore")
-                if os.path.exists(bidsignore_file):
-                    patterns = read_plain_text(bidsignore_file)
+                bidsignore_file = self.vfs.join(base_dir, ".bidsignore")
+                if self.vfs.exists(bidsignore_file):
+                    patterns = read_plain_text(bidsignore_file, vfs=self.vfs)
             elif isinstance(self.options.ignore, list):
                 patterns = self.options.ignore
 
@@ -214,23 +217,39 @@ class DatasetPopulationPlugin(DatasetPlugin):
         for member in members:
             self._expand_member(folder, member)
 
-    def _load_folder(self, parent, dir_path, ds_path):
-        rel_base = dir_path[len(ds_path):]
-        entries = sorted(os.scandir(dir_path), key=lambda e: e.name)
-        for entry in entries:
-            rel_path = f'{rel_base}/{entry.name}'[1:] if rel_base else entry.name
+    def _load_from_paths(self, dataset, paths):
+        for rel_path in sorted(paths):
             if self.bidsignore(rel_path):
                 continue
-            if entry.is_dir(follow_symlinks=False):
+            parts = split_rel_path(rel_path)
+            if not parts:
+                continue
+            parent = dataset
+            for segment in parts[:-1]:
+                parent = parent.get_or_create_folder(segment)
+            model_file = File()
+            model_file.parent_object_ = parent
+            model_file.name = parts[-1]
+            parent.files.append(model_file)
+
+    def _load_folder(self, parent, dir_path, ds_path):
+        rel_base = dir_path[len(ds_path):]
+        entries = sorted(self.vfs.listdir(dir_path), key=lambda name: name)
+        for name in entries:
+            entry_path = self.vfs.join(dir_path, name)
+            rel_path = f'{rel_base}/{name}'[1:] if rel_base else name
+            if self.bidsignore(rel_path):
+                continue
+            if self.vfs.is_dir(entry_path):
                 folder = Folder()
                 folder.parent_object_ = parent
-                folder.name = entry.name
+                folder.name = name
                 parent.folders.append(folder)
-                self._load_folder(folder, entry.path, ds_path)
+                self._load_folder(folder, entry_path, ds_path)
             else:
                 model_file = File()
                 model_file.parent_object_ = parent
-                model_file.name = entry.name
+                model_file.name = name
                 parent.files.append(model_file)
 
     def _type_handler_default(self, parent, member, allow_lazy=True):

@@ -5,10 +5,11 @@ import tempfile
 
 import pytest
 
-from ancpbids import load_dataset, validate_dataset, DatasetOptions
+from ancpbids import validate_dataset, DatasetOptions
 from ancpbids.schema.headers import parse_gzip, parse_nifti_header, axis_codes
 from ancpbids.schema.validate import _value_matches, _load_binary_headers
 from ..base_test_case import DS005_DIR
+from tests.load_helpers import load_test_dataset
 
 
 def _write_minimal_nifti_gz(path):
@@ -108,8 +109,8 @@ def test_load_binary_headers_into_context():
 
 
 @pytest.mark.parametrize('lazy_loading', [True, False])
-def test_validation_subject_context(lazy_loading):
-    dataset = load_dataset(DS005_DIR, DatasetOptions(lazy_loading=lazy_loading))
+def test_validation_subject_context(lazy_loading, paths_mode):
+    dataset = load_test_dataset(DS005_DIR, DatasetOptions(lazy_loading=lazy_loading), paths_mode=paths_mode)
     report = validate_dataset(dataset)
     session = report._schema_session
     events = None

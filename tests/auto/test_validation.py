@@ -1,5 +1,5 @@
 
-from ancpbids import load_dataset, _internal_validate_dataset
+from ancpbids import _internal_validate_dataset
 from ..base_test_case import DS005_CONFLICT_DIR, RESOURCES_FOLDER
 from ancpbids.plugin import ValidationPlugin, get_plugins
 from ancpbids.plugins import plugin_schema_validator as schema_plugins
@@ -10,10 +10,15 @@ from ancpbids.plugins.plugin_schema_validator import (
 
 import pytest
 from ancpbids import DatasetOptions
+from tests.load_helpers import load_test_dataset
 
 
-def createSUT(ds_dir, rule_class, lazy_loading):
-    test_ds = load_dataset(ds_dir, DatasetOptions(lazy_loading=lazy_loading))
+def createSUT(ds_dir, rule_class, lazy_loading, paths_mode):
+    test_ds = load_test_dataset(
+        ds_dir,
+        DatasetOptions(lazy_loading=lazy_loading),
+        paths_mode=paths_mode,
+    )
     report = _internal_validate_dataset(test_ds, lambda plugin: isinstance(plugin, rule_class))
     assert isinstance(report, ValidationPlugin.ValidationReport)
     return report
@@ -40,14 +45,14 @@ def test_schema_rule_plugins_registered():
 
 
 @pytest.mark.parametrize("lazy_loading", [True, False])
-def test_validate_datatypes(lazy_loading):
-    report = createSUT(DS005_CONFLICT_DIR, SchemaDirectoriesPlugin, lazy_loading)
+def test_validate_datatypes(lazy_loading, paths_mode):
+    report = createSUT(DS005_CONFLICT_DIR, SchemaDirectoriesPlugin, lazy_loading, paths_mode)
     messages = _messages(report)
     assert "Unsupported datatype folder 'sub-01/abc'" in messages
     assert "Unsupported datatype folder 'sub-01/xyz'" in messages
 
 
-def test_directories_rule_missing_is_skipped(tmp_path):
+def test_directories_rule_missing_is_skipped(tmp_path, paths_mode):
     """Schemas without rules.directories (e.g. 1.8.0) must not crash validation."""
     import json
     from ancpbids import validate_dataset
@@ -63,11 +68,15 @@ def test_directories_rule_missing_is_skipped(tmp_path):
     sub.mkdir(parents=True)
     (sub / "sub-01_T1w.nii.gz").write_bytes(b"\0")
 
-    ds = load_dataset(str(root), DatasetOptions(lazy_loading=True, ignore_pickle_file=True))
+    ds = load_test_dataset(
+        str(root),
+        DatasetOptions(lazy_loading=True, ignore_pickle_file=True),
+        paths_mode=paths_mode,
+    )
     assert ds.get_schema().VERSION == "1.8.0"
     assert "directories" not in ds.get_schema().document.get("rules", {})
 
-    report = createSUT(str(root), SchemaDirectoriesPlugin, True)
+    report = createSUT(str(root), SchemaDirectoriesPlugin, True, paths_mode)
     assert isinstance(report, ValidationPlugin.ValidationReport)
 
     # Full validate must also succeed without KeyError.
@@ -75,7 +84,7 @@ def test_directories_rule_missing_is_skipped(tmp_path):
     assert isinstance(full, ValidationPlugin.ValidationReport)
 
 
-def test_validation_report_includes_issue_codes(tmp_path):
+def test_validation_report_includes_issue_codes(tmp_path, paths_mode):
     import json
     from ancpbids import validate_dataset
     from ancpbids.plugins.plugin_schema_validator import SchemaSidecarsPlugin
@@ -95,7 +104,7 @@ def test_validation_report_includes_issue_codes(tmp_path):
         "TaskName": "rest",
     }))
 
-    report = createSUT(str(root), SchemaSidecarsPlugin, True)
+    report = createSUT(str(root), SchemaSidecarsPlugin, True, paths_mode)
     assert report.messages
     assert all('code' in m for m in report.messages)
     assert 'SIDECAR_KEY_RECOMMENDED' in report.codes()
@@ -105,14 +114,22 @@ def test_validation_report_includes_issue_codes(tmp_path):
     )
     assert manufacturer['severity'] == 'warn'
 
-    full = validate_dataset(load_dataset(str(root), DatasetOptions(lazy_loading=True)))
+    full = validate_dataset(load_test_dataset(
+        str(root),
+        DatasetOptions(lazy_loading=True),
+        paths_mode=paths_mode,
+    ))
     assert all('code' in m for m in full.messages)
 
 
 @pytest.mark.parametrize("lazy_loading", [True, False])
-def test_validation_entities(lazy_loading):
-    report = createSUT(RESOURCES_FOLDER + "/ds005_entities_validation",
-                       SchemaEntitiesPlugin, lazy_loading)
+def test_validation_entities(lazy_loading, paths_mode):
+    report = createSUT(
+        RESOURCES_FOLDER + "/ds005_entities_validation",
+        SchemaEntitiesPlugin,
+        lazy_loading,
+        paths_mode,
+    )
     messages = _messages(report)
     assert (
         "Invalid entities order: expected=('sub', 'task', 'run'), found=('sub', 'run', 'task'), "

@@ -1,7 +1,8 @@
 
 import pytest
-from ancpbids import model_v1_8_0, model_latest, load_dataset, load_schema, DatasetOptions
+from ancpbids import model_v1_8_0, model_latest, load_schema, DatasetOptions
 from ..base_test_case import DS005_DIR, DS005_SMALL_DIR
+from tests.load_helpers import load_test_dataset
 
 def test_entity_matching():
     assert model_latest.fuzzy_match_entity_key('sub') == 'sub'
@@ -14,13 +15,13 @@ def test_entity_matching():
 
 
 @pytest.mark.parametrize("lazy_loading", [True, False])
-def test_schema_versions(lazy_loading):
-    ds_latest = load_dataset(DS005_DIR, DatasetOptions(lazy_loading=lazy_loading))
+def test_schema_versions(lazy_loading, paths_mode):
+    ds_latest = load_test_dataset(DS005_DIR, DatasetOptions(lazy_loading=lazy_loading), paths_mode=paths_mode)
     schema_latest = ds_latest.get_schema()
     assert schema_latest == model_latest
     assert schema_latest.VERSION == '1.11.1'
 
-    ds_old = load_dataset(DS005_SMALL_DIR, DatasetOptions(lazy_loading=lazy_loading))
+    ds_old = load_test_dataset(DS005_SMALL_DIR, DatasetOptions(lazy_loading=lazy_loading), paths_mode=paths_mode)
     schema_old = ds_old.get_schema()
     assert schema_old == model_v1_8_0
     assert schema_old.VERSION == '1.8.0'

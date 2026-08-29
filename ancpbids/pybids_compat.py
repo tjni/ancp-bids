@@ -27,8 +27,8 @@ class BIDSLayout(_BIDSLayoutBase):
         the (absolute) path to the dataset to load
     """
 
-    def __init__(self, ds_dir: str, **kwargs):
-        self.dataset = load_dataset(ds_dir)
+    def __init__(self, ds_dir: str, options=None, *, vfs=None, paths=None):
+        self.dataset = load_dataset(ds_dir, options, vfs=vfs, paths=paths)
         self.schema = self.dataset.get_schema()
 
     def __getattr__(self, key):

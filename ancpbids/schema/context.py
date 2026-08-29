@@ -1,8 +1,8 @@
 """Build schema validation context (sidecar, columns, associations, headers)."""
 import gzip as gzip_mod
-import os
 
 from ancpbids.model_base import Artifact, DatatypeFolder, DerivativeFolder, Subject
+from ancpbids.vfs import resolve_vfs
 
 from .headers import parse_gzip, parse_nifti_header, parse_tiff
 from .session import queue_issue, selectors_match
@@ -18,10 +18,10 @@ def build_context(session, file, rich=False):
         ctx = dict(basic_context(file, session))
         ctx['subject'] = session.subject_context(file)
         ctx['sidecar'] = sidecar(file)
-        ctx['json'] = load_json(file)
+        ctx['json'] = load_json(file, vfs=session.vfs)
         ctx['associations'] = associations(file, session, ctx)
         ctx['columns'] = load_columns(file, session, ctx)
-        ctx['size'] = file_size(file)
+        ctx['size'] = file_size(file, vfs=session.vfs)
         load_binary_headers(file, ctx, session)
         session._contexts[(file_id, True)] = ctx
         session._contexts[(file_id, False)] = ctx
@@ -38,24 +38,25 @@ def build_context(session, file, rich=False):
     return ctx
 
 
-def json_contents(file):
+def json_contents(file, vfs=None):
     if file is None:
         return {}
     value = getattr(file, 'contents', None)
     if value is None and hasattr(file, 'load_contents'):
-        value = file.load_contents()
+        value = file.load_contents(vfs=vfs)
     return value if isinstance(value, dict) else {}
 
 
-def load_json(file):
+def load_json(file, vfs=None):
     if file is None or not file.name.endswith('.json'):
         return None
-    return json_contents(file)
+    return json_contents(file, vfs=vfs)
 
 
 def load_columns(file, session=None, ctx=None):
     if file is None:
         return None
+    vfs = session.vfs if session is not None else None
     extension = getattr(file, 'extension', None) or ''
     suffix = getattr(file, 'suffix', None)
     if extension == '.tsv.gz' or (extension == '.tsv' and suffix == 'motion'):
@@ -64,7 +65,7 @@ def load_columns(file, session=None, ctx=None):
         return None
     rows = getattr(file, 'contents', None)
     if rows is None and hasattr(file, 'load_contents'):
-        rows = file.load_contents()
+        rows = file.load_contents(vfs=vfs)
     if not isinstance(rows, list):
         return load_tsv_from_disk(file, session)
     if not rows:
@@ -96,11 +97,11 @@ def load_headerless_columns(file, session, ctx):
         headers = channels.get('name')
     if not headers:
         return None
-    size = file_size(file)
+    size = file_size(file, vfs=session.vfs if session is not None else None)
     if size == 0:
         return None
     try:
-        lines = read_text_lines(file.get_absolute_path(), gzipped=compressed)
+        lines = read_text_lines(file, gzipped=compressed, vfs=session.vfs if session else None)
     except OSError:
         if compressed and session is not None:
             queue_issue(session, 'error', 'Invalid gzip', file, 'INVALID_GZIP')
@@ -110,7 +111,7 @@ def load_headerless_columns(file, session, ctx):
 
 def load_tsv_from_disk(file, session):
     try:
-        lines = read_text_lines(file.get_absolute_path(), gzipped=False)
+        lines = read_text_lines(file, gzipped=False, vfs=session.vfs if session else None)
     except OSError:
         return {}
     if not lines:
@@ -121,10 +122,23 @@ def load_tsv_from_disk(file, session):
     return columns_from_lines(headers, lines[1:], file, session, start_line=2)
 
 
-def read_text_lines(path, gzipped=False):
-    opener = gzip_mod.open if gzipped else open
-    with opener(path, 'rt', encoding='utf-8', newline='') as handle:
-        text = handle.read()
+def read_text_lines(file, gzipped=False, vfs=None):
+    resolved_vfs = resolve_vfs(vfs)
+    path = file.get_absolute_path()
+    if gzipped:
+        try:
+            text = gzip_mod.decompress(resolved_vfs.read_bytes(path)).decode('utf-8')
+        except OSError:
+            raise
+        except Exception as exc:
+            raise OSError(str(exc)) from exc
+    else:
+        try:
+            text = resolved_vfs.read_text(path)
+        except OSError:
+            raise
+        except Exception as exc:
+            raise OSError(str(exc)) from exc
     if not text:
         return []
     return text.splitlines()
@@ -168,9 +182,9 @@ def sidecar(file):
         return {}
 
 
-def file_size(file):
+def file_size(file, vfs=None):
     try:
-        return os.path.getsize(file.get_absolute_path())
+        return resolve_vfs(vfs).getsize(file.get_absolute_path())
     except OSError:
         return None
 
@@ -188,7 +202,7 @@ def basic_context(file, session):
     if isinstance(file, Artifact):
         for key, value in file.entities.items():
             entities[session.entity_long.get(key, key)] = value
-    description = local_dataset_description(file, session.dataset_description)
+    description = local_dataset_description(file, session.dataset_description, vfs=session.vfs)
     dataset_ctx = dict(session.dataset_ctx)
     dataset_ctx['dataset_description'] = description
     return {
@@ -225,11 +239,13 @@ def ancestor_subject(file):
 
 def load_binary_headers(file, ctx, session=None):
     path = file.get_absolute_path()
+    vfs = session.vfs if session is not None else None
+    resolved_vfs = resolve_vfs(vfs)
     extension = file.extension or ''
     if extension.endswith('.gz'):
-        ctx['gzip'] = parse_gzip(path)
+        ctx['gzip'] = parse_gzip(path, vfs=resolved_vfs)
     if extension.startswith('.nii'):
-        header = parse_nifti_header(path)
+        header = parse_nifti_header(path, vfs=resolved_vfs)
         ctx['nifti_header'] = header
         if header is not None and header.get('axis_codes') is None and session is not None:
             queue_issue(
@@ -240,16 +256,16 @@ def load_binary_headers(file, ctx, session=None):
                 'AMBIGUOUS_AFFINE')
     if extension.endswith('.tif') or extension.endswith('.btf') or '.ome.tif' in file.name:
         ome = extension.startswith('.ome') or '.ome.' in file.name
-        tiff, ome_meta = parse_tiff(path, ome=ome)
+        tiff, ome_meta = parse_tiff(path, ome=ome, vfs=resolved_vfs)
         ctx['tiff'] = tiff
         ctx['ome'] = ome_meta
 
 
-def local_dataset_description(file, root_description):
+def local_dataset_description(file, root_description, vfs=None):
     current = file
     while current is not None:
         if isinstance(current, DerivativeFolder):
-            contents = json_contents(current.dataset_description)
+            contents = json_contents(current.dataset_description, vfs=vfs)
             return contents or {'DatasetType': 'derivative'}
         current = getattr(current, 'parent_object_', None)
     return root_description
@@ -364,7 +380,7 @@ def exact_associated(file, matches, allowed_extra):
 def association_context(found, name, session):
     if name == 'coordsystems':
         files = found if isinstance(found, list) else ([found] if found else [])
-        return coordsystems_context(files)
+        return coordsystems_context(files, vfs=session.vfs)
     if found is None:
         return None
     if isinstance(found, list):
@@ -376,7 +392,7 @@ def association_context(found, name, session):
         return {'path': path, 'sidecar': sidecar(found)}
     name_on_disk = found.name
     if name_on_disk.endswith('.bval') or name_on_disk.endswith('.bvec'):
-        return bval_bvec_context(found, path)
+        return bval_bvec_context(found, path, vfs=session.vfs)
     if isinstance(found, Artifact) and found.extension == '.json':
         return {'path': path}
     ctx = {'path': path, 'n_rows': None}
@@ -389,7 +405,7 @@ def association_context(found, name, session):
     return ctx
 
 
-def coordsystems_context(files):
+def coordsystems_context(files, vfs=None):
     if not files:
         return None
     paths = []
@@ -399,7 +415,7 @@ def coordsystems_context(files):
         paths.append(schema_path(item))
         ents = item.get_entities() if isinstance(item, Artifact) else {}
         spaces.append(ents.get('space'))
-        contents = json_contents(item)
+        contents = json_contents(item, vfs=vfs)
         parent = contents.get('ParentCoordinateSystem')
         if parent:
             parents.append(parent)
@@ -410,9 +426,9 @@ def coordsystems_context(files):
     }
 
 
-def bval_bvec_context(file, path):
+def bval_bvec_context(file, path, vfs=None):
     try:
-        text = open(file.get_absolute_path(), 'r', encoding='utf-8').read()
+        text = resolve_vfs(vfs).read_text(file.get_absolute_path())
     except OSError:
         return {'path': path, 'n_cols': 0, 'n_rows': 0, 'values': []}
     rows = [line.split() for line in text.strip().splitlines() if line.strip()]

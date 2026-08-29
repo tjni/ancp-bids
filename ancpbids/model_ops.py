@@ -9,6 +9,7 @@ from enum import Enum
 from typing import Any, Callable, Dict, Iterator, List, Optional, TYPE_CHECKING, Type, Union
 
 from ancpbids.utils import convert_to_relative, resolve_segments
+from ancpbids.vfs import resolve_vfs
 
 if TYPE_CHECKING:
     from ancpbids.query import Select
@@ -145,10 +146,11 @@ class FileOps:
     name: str
     parent_object_: Optional["Folder"]
 
-    def load_contents(self) -> Any:
+    def load_contents(self, vfs=None) -> Any:
         from ancpbids import utils
+
         file_path = _get_path(self.parent_object_, self.name, True)
-        return utils.load_contents(file_path)
+        return utils.load_contents(file_path, vfs=resolve_vfs(vfs))
 
     def get_absolute_path(self) -> str:
         return _get_path(self.parent_object_, self.name, True)
@@ -234,15 +236,26 @@ class FolderOps:
         from ancpbids.query import query_entities
         return query_entities(self, scope, sort, long_form)
 
-    def load_file_contents(self, file_name: str, return_type: Optional[str] = None) -> Any:
+    def load_file_contents(self, file_name: str, return_type: Optional[str] = None, vfs=None) -> Any:
         from ancpbids import utils
-        return utils.load_contents(_get_path(self, file_name, True), return_type)
+
+        return utils.load_contents(
+            _get_path(self, file_name, True),
+            return_type,
+            vfs=resolve_vfs(vfs),
+        )
 
     def get_absolute_path(self, file_name: Optional[str] = None) -> str:
         return _get_path(self, file_name, True)
 
     def get_relative_path(self) -> str:
         return _get_path(self, None, False)
+
+    def get_or_create_folder(self, folder_name: str, type_: Optional[Type["Folder"]] = None) -> "Folder":
+        folder = self.get_folder(folder_name)
+        if folder is not None:
+            return folder
+        return self.create_folder(type_=type_, name=folder_name)
 
     def remove_file(self, file_name: str) -> None:
         self.files = [file for file in self.files if file.name != file_name]

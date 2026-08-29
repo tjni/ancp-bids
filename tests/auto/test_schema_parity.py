@@ -1,12 +1,13 @@
 import gzip
 import json
 
-from ancpbids import load_dataset, validate_dataset, DatasetOptions
+from ancpbids import validate_dataset, DatasetOptions
 from ancpbids.plugins.plugin_schema_validator import (
     SchemaFilesPlugin,
     SchemaSidecarsPlugin,
 )
 from ancpbids import _internal_validate_dataset
+from tests.load_helpers import load_test_dataset
 
 
 def _write_ds(root, description=None):
@@ -18,7 +19,7 @@ def _write_ds(root, description=None):
     }))
 
 
-def test_physio_association_includes_sidecar(tmp_path):
+def test_physio_association_includes_sidecar(tmp_path, paths_mode):
     root = tmp_path / 'ds'
     _write_ds(root)
     func = root / 'sub-01' / 'func'
@@ -36,7 +37,11 @@ def test_physio_association_includes_sidecar(tmp_path):
     with gzip.open(func / 'sub-01_task-rest_physio.tsv.gz', 'wb') as handle:
         handle.write(b'1\t2\n3\t4\n')
 
-    ds = load_dataset(str(root), DatasetOptions(lazy_loading=True, ignore_pickle_file=True))
+    ds = load_test_dataset(
+        str(root),
+        DatasetOptions(lazy_loading=True, ignore_pickle_file=True),
+        paths_mode=paths_mode,
+    )
     report = validate_dataset(ds)
     session = report._schema_session
     bold = next(
@@ -58,7 +63,7 @@ def test_physio_association_includes_sidecar(tmp_path):
     assert physio_ctx['columns']['respiratory'] == ['2', '4']
 
 
-def test_coordsystems_multi_association(tmp_path):
+def test_coordsystems_multi_association(tmp_path, paths_mode):
     root = tmp_path / 'ds'
     _write_ds(root)
     emg = root / 'sub-01' / 'emg'
@@ -74,7 +79,11 @@ def test_coordsystems_multi_association(tmp_path):
         'ECGCoordinateUnits': 'mm',
     }))
 
-    ds = load_dataset(str(root), DatasetOptions(lazy_loading=True, ignore_pickle_file=True))
+    ds = load_test_dataset(
+        str(root),
+        DatasetOptions(lazy_loading=True, ignore_pickle_file=True),
+        paths_mode=paths_mode,
+    )
     report = validate_dataset(ds)
     session = report._schema_session
     data = next(
@@ -89,14 +98,18 @@ def test_coordsystems_multi_association(tmp_path):
     assert coords['ParentCoordinateSystems'] == ['Cap']
 
 
-def test_filename_missing_required_entity_not_not_included(tmp_path):
+def test_filename_missing_required_entity_not_not_included(tmp_path, paths_mode):
     root = tmp_path / 'ds'
     _write_ds(root)
     func = root / 'sub-01' / 'func'
     func.mkdir(parents=True)
     (func / 'sub-01_bold.nii.gz').write_bytes(b'\0')
 
-    ds = load_dataset(str(root), DatasetOptions(lazy_loading=True, ignore_pickle_file=True))
+    ds = load_test_dataset(
+        str(root),
+        DatasetOptions(lazy_loading=True, ignore_pickle_file=True),
+        paths_mode=paths_mode,
+    )
     report = _internal_validate_dataset(
         ds, lambda plugin: isinstance(plugin, SchemaFilesPlugin))
     codes = report.codes()
@@ -104,7 +117,7 @@ def test_filename_missing_required_entity_not_not_included(tmp_path):
     assert 'NOT_INCLUDED' not in codes
 
 
-def test_derivative_sidecar_keys_optional(tmp_path):
+def test_derivative_sidecar_keys_optional(tmp_path, paths_mode):
     root = tmp_path / 'ds'
     _write_ds(root, {
         'Name': 'Deriv',
@@ -121,7 +134,11 @@ def test_derivative_sidecar_keys_optional(tmp_path):
         'SkullStripped': False,
     }))
 
-    ds = load_dataset(str(root), DatasetOptions(lazy_loading=True, ignore_pickle_file=True))
+    ds = load_test_dataset(
+        str(root),
+        DatasetOptions(lazy_loading=True, ignore_pickle_file=True),
+        paths_mode=paths_mode,
+    )
     report = _internal_validate_dataset(
         ds, lambda plugin: isinstance(plugin, SchemaSidecarsPlugin))
     # Raw MRI sidecar recommendations should be skipped for derivatives unless
@@ -131,11 +148,16 @@ def test_derivative_sidecar_keys_optional(tmp_path):
     assert 'MagneticFieldStrength' not in sub_codes
     assert 'SIDECAR_KEY_REQUIRED' not in report.codes()
 
-def test_tsv_equal_rows(tmp_path):
+
+def test_tsv_equal_rows(tmp_path, paths_mode):
     root = tmp_path / 'ds'
     _write_ds(root)
     (root / 'participants.tsv').write_text('participant_id\tsex\nsub-01\n')
 
-    ds = load_dataset(str(root), DatasetOptions(lazy_loading=True, ignore_pickle_file=True))
+    ds = load_test_dataset(
+        str(root),
+        DatasetOptions(lazy_loading=True, ignore_pickle_file=True),
+        paths_mode=paths_mode,
+    )
     report = validate_dataset(ds)
     assert 'TSV_EQUAL_ROWS' in report.codes()

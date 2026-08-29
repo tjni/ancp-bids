@@ -5,12 +5,14 @@ import ancpbids
 from ancpbids import all_of, eq, entity
 from ..base_test_case import ENTITIES_DIR, DS005_DIR, SYNTHETIC_DIR
 
+from tests.load_helpers import load_test_dataset
+
 import pytest
 from ancpbids import DatasetOptions
 
 @pytest.mark.parametrize("lazy_loading", [True, False])
-def test_entities_formatting(lazy_loading):
-    layout = ancpbids.load_dataset(ENTITIES_DIR, DatasetOptions(lazy_loading=lazy_loading))
+def test_entities_formatting(lazy_loading, paths_mode):
+    layout = load_test_dataset(ENTITIES_DIR, DatasetOptions(lazy_loading=lazy_loading), paths_mode=paths_mode)
     files = layout.query(sub='02', run='3', return_type='filename')
     assert len(files) == 1
     assert files[0].endswith("sub-02_task-abc_run-00003_events.tsv")
@@ -25,23 +27,23 @@ def test_entities_formatting(lazy_loading):
     assert files[0].endswith("sub-02_task-abc_run-xyz_events.tsv")
 
 @pytest.mark.parametrize("lazy_loading", [True, False])
-def test_bidslayout_entities_any(lazy_loading):
-    layout = ancpbids.load_dataset(ENTITIES_DIR, DatasetOptions(lazy_loading=lazy_loading))
+def test_bidslayout_entities_any(lazy_loading, paths_mode):
+    layout = load_test_dataset(ENTITIES_DIR, DatasetOptions(lazy_loading=lazy_loading), paths_mode=paths_mode)
     files = layout.query(sub='*', suffix='test', task='abc', return_type='filename')
     assert len(files) == 2
     assert files[0].endswith("sub-bar_task-abc_test.txt")
     assert files[1].endswith("sub-foo_task-abc_test.txt")
 
 @pytest.mark.parametrize("lazy_loading", [True, False])
-def test_bidslayout_subjects_filtered(lazy_loading):
-    layout = ancpbids.load_dataset(ENTITIES_DIR, DatasetOptions(lazy_loading=lazy_loading))
+def test_bidslayout_subjects_filtered(lazy_loading, paths_mode):
+    layout = load_test_dataset(ENTITIES_DIR, DatasetOptions(lazy_loading=lazy_loading), paths_mode=paths_mode)
     subjects = layout.query(target="sub", task='abc')
     assert len(subjects) == 3
     assert ['02', 'bar', 'foo'] == subjects
 
 @pytest.mark.parametrize("lazy_loading", [True, False])
-def test_bidslayout(lazy_loading):
-    layout = ancpbids.load_dataset(DS005_DIR, DatasetOptions(lazy_loading=lazy_loading))
+def test_bidslayout(lazy_loading, paths_mode):
+    layout = load_test_dataset(DS005_DIR, DatasetOptions(lazy_loading=lazy_loading), paths_mode=paths_mode)
     ents = layout.query_entities()
     subjects = ents["subject"]
     subjects_expected = {'%02d' % i for i in range(1, 17)}
@@ -51,8 +53,8 @@ def test_bidslayout(lazy_loading):
     assert {'mixedgamblestask'} == tasks
 
 @pytest.mark.parametrize("lazy_loading", [True, False])
-def test_bidslayout_get(lazy_loading):
-    layout = ancpbids.load_dataset(SYNTHETIC_DIR, DatasetOptions(lazy_loading=lazy_loading))
+def test_bidslayout_get(lazy_loading, paths_mode):
+    layout = load_test_dataset(SYNTHETIC_DIR, DatasetOptions(lazy_loading=lazy_loading), paths_mode=paths_mode)
     mask_niftis = layout.query(scope='derivatives',
                                return_type='filename',
                                suffix='mask',
@@ -74,8 +76,8 @@ def test_bidslayout_get(lazy_loading):
         assert any(file == p for p in mask_niftis)
 
 @pytest.mark.parametrize("lazy_loading", [True, False])
-def test_bidslayout_get_entities(lazy_loading):
-    layout = ancpbids.load_dataset(DS005_DIR, DatasetOptions(lazy_loading=lazy_loading))
+def test_bidslayout_get_entities(lazy_loading, paths_mode):
+    layout = load_test_dataset(DS005_DIR, DatasetOptions(lazy_loading=lazy_loading), paths_mode=paths_mode)
     sorted_entities = layout.query_entities(scope='raw', sort=True)
     assert ['ds', 'run', 'subject', 'task', 'type'] == list(sorted_entities.keys())
     assert [1, 2, 3] == sorted_entities['run']
@@ -83,20 +85,20 @@ def test_bidslayout_get_entities(lazy_loading):
     assert ['mixedgamblestask'] == sorted_entities['task']
 
 @pytest.mark.parametrize("lazy_loading", [True, False])
-def test_bidslayout_get_suffixes(lazy_loading):
-    layout = ancpbids.load_dataset(DS005_DIR, DatasetOptions(lazy_loading=lazy_loading))
+def test_bidslayout_get_suffixes(lazy_loading, paths_mode):
+    layout = load_test_dataset(DS005_DIR, DatasetOptions(lazy_loading=lazy_loading), paths_mode=paths_mode)
     suffixes = layout.query(target="suffixe")
     assert ['T1w', 'bold', 'dwi', 'events', 'model'] == suffixes
 
 @pytest.mark.parametrize("lazy_loading", [True, False])
-def test_bidslayout_get_extensions(lazy_loading):
-    layout = ancpbids.load_dataset(DS005_DIR, DatasetOptions(lazy_loading=lazy_loading))
+def test_bidslayout_get_extensions(lazy_loading, paths_mode):
+    layout = load_test_dataset(DS005_DIR, DatasetOptions(lazy_loading=lazy_loading), paths_mode=paths_mode)
     extensions = layout.query(target="extension")
     assert ['.json', '.nii.gz', '.tsv'] == extensions
 
 @pytest.mark.parametrize("lazy_loading", [True, False])
-def test_bidslayout_get_metadata(lazy_loading):
-    layout = ancpbids.load_dataset(DS005_DIR, DatasetOptions(lazy_loading=lazy_loading))
+def test_bidslayout_get_metadata(lazy_loading, paths_mode):
+    layout = load_test_dataset(DS005_DIR, DatasetOptions(lazy_loading=lazy_loading), paths_mode=paths_mode)
     metadata = layout.get_file("sub-01/func/sub-01_task-mixedgamblestask_run-01_bold.nii.gz").get_metadata(
         include_entities=True)
     assert isinstance(metadata, dict)
@@ -108,8 +110,8 @@ def test_bidslayout_get_metadata(lazy_loading):
     assert metadata['run'] == 1
 
 @pytest.mark.parametrize("lazy_loading", [True, False])
-def test_query_language(lazy_loading):
-    ds = ancpbids.load_dataset(DS005_DIR, DatasetOptions(lazy_loading=lazy_loading))
+def test_query_language(lazy_loading, paths_mode):
+    ds = load_test_dataset(DS005_DIR, DatasetOptions(lazy_loading=lazy_loading), paths_mode=paths_mode)
     schema = ds.get_schema()
     file_paths = ds.select(schema.Artifact) \
         .where(all_of(eq(schema.Artifact.suffix, 'bold'),

@@ -1,96 +1,83 @@
 from typing import Optional
 
 from ancpbids.plugin import FileHandlerPlugin, hook
+from ancpbids.vfs import resolve_vfs
 
 
 def read_yaml(file_path: str, **kwargs):
     import yaml
-    with open(file_path, 'r') as stream:
-        try:
-            return yaml.load(stream, Loader=yaml.FullLoader)
-        except:
-            return None
+
+    vfs = resolve_vfs(kwargs.get('vfs'))
+    try:
+        return yaml.load(vfs.read_text(file_path), Loader=yaml.FullLoader)
+    except Exception:
+        return None
 
 
 def read_json(file_path: str, **kwargs):
-    # we cannot use yaml to load json if it contains any TABs for indentation
     import json
-    with open(file_path, 'r') as stream:
-        try:
-            return json.load(stream)
-        except:
-            return None
+
+    vfs = resolve_vfs(kwargs.get('vfs'))
+    try:
+        return json.loads(vfs.read_text(file_path))
+    except Exception:
+        return None
 
 
 def read_plain_text(file_path: str, **kwargs):
-    with open(file_path, 'r') as file:
-        return file.readlines()
+    vfs = resolve_vfs(kwargs.get('vfs'))
+    text = vfs.read_text(file_path)
+    if not text:
+        return []
+    return text.splitlines(keepends=True)
 
 
 def read_tsv(file_path: str, return_type: Optional[str] = None, **kwargs):
+    import csv
+    import io
+
+    vfs = resolve_vfs(kwargs.get('vfs'))
     if return_type == "ndarray":
         import numpy
 
         return numpy.genfromtxt(
-            file_path, delimiter='\t', dtype=None, names=True
+            io.BytesIO(vfs.read_bytes(file_path)), delimiter='\t', dtype=None, names=True
         )
-    elif return_type == "dataframe":
+    if return_type == "dataframe":
         import pandas
 
-        return pandas.read_csv(file_path, delimiter='\t')
-    else:
-        import csv
-
-        with open(file_path) as f:
-            return list(csv.DictReader(f, dialect="excel-tab"))
+        return pandas.read_csv(io.BytesIO(vfs.read_bytes(file_path)), delimiter='\t')
+    return list(csv.DictReader(io.StringIO(vfs.read_text(file_path)), dialect="excel-tab"))
 
 
 def write_json(file_path: str, contents: dict, **kwargs):
-    """Writes the contents as a .json file to the given file path.
-
-    Parameters
-    ----------
-    file_path:
-        The path to the file to store the contents to.
-    contents:
-        The contents of the target .json file.
-
-    """
     import json
-    with open(file_path, 'w') as fp:
-        json.dump(contents, fp, indent=2)
+
+    vfs = resolve_vfs(kwargs.get('vfs'))
+    vfs.write_text(file_path, json.dumps(contents, indent=2))
 
 
 def write_tsv(file_path: str, contents, **kwargs):
-    """Writes tabular contents as a BIDS ``.tsv`` (tab-separated) file.
+    import csv
+    import io
 
-    Parameters
-    ----------
-    file_path:
-        The path to the file to store the contents to.
-    contents:
-        One of:
-        * ``str`` — written as-is (a trailing newline is added if missing)
-        * ``list[dict]`` — rows written with ``csv.DictWriter`` (excel-tab)
-        * a pandas ``DataFrame`` — written via ``DataFrame.to_csv``
-
-    """
+    vfs = resolve_vfs(kwargs.get('vfs'))
     if isinstance(contents, str):
-        with open(file_path, 'w', newline='') as fp:
-            fp.write(contents)
-            if contents and not contents.endswith('\n'):
-                fp.write('\n')
+        payload = contents
+        if payload and not payload.endswith('\n'):
+            payload += '\n'
+        vfs.write_text(file_path, payload)
         return
 
     if hasattr(contents, 'to_csv') and hasattr(contents, 'columns'):
-        contents.to_csv(file_path, sep='\t', index=False)
+        buffer = io.StringIO()
+        contents.to_csv(buffer, sep='\t', index=False)
+        vfs.write_text(file_path, buffer.getvalue())
         return
 
     if isinstance(contents, list):
-        import csv
         if not contents:
-            with open(file_path, 'w', newline='') as fp:
-                pass
+            vfs.write_text(file_path, '')
             return
         if not isinstance(contents[0], dict):
             raise TypeError(
@@ -98,16 +85,17 @@ def write_tsv(file_path: str, contents, **kwargs):
                 f"got list of {type(contents[0]).__name__}"
             )
         fieldnames = list(contents[0].keys())
-        with open(file_path, 'w', newline='') as fp:
-            writer = csv.DictWriter(
-                fp,
-                fieldnames=fieldnames,
-                delimiter='\t',
-                lineterminator='\n',
-                extrasaction='ignore',
-            )
-            writer.writeheader()
-            writer.writerows(contents)
+        buffer = io.StringIO()
+        writer = csv.DictWriter(
+            buffer,
+            fieldnames=fieldnames,
+            delimiter='\t',
+            lineterminator='\n',
+            extrasaction='ignore',
+        )
+        writer.writeheader()
+        writer.writerows(contents)
+        vfs.write_text(file_path, buffer.getvalue())
         return
 
     raise TypeError(
@@ -117,18 +105,8 @@ def write_tsv(file_path: str, contents, **kwargs):
 
 
 def write_txt(file_path: str, contents: dict, **kwargs):
-    """Writes the contents as a .txt file to the given file path.
-
-    Parameters
-    ----------
-    file_path:
-        The path to the file to store the contents to.
-    contents:
-        The contents of the target .txt file.
-
-    """
-    with open(file_path, 'w') as fp:
-        fp.write(str(contents))
+    vfs = resolve_vfs(kwargs.get('vfs'))
+    vfs.write_text(file_path, str(contents))
 
 
 @hook(ranking=0, system=True)

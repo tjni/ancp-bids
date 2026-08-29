@@ -1,11 +1,12 @@
 
 import pytest
-from ancpbids import load_dataset, DatasetOptions
+from ancpbids import DatasetOptions
 from ..base_test_case import SYNTHETIC_DIR, DS005_SMALL2_DIR
+from tests.load_helpers import load_test_dataset
 
 @pytest.mark.parametrize("lazy_loading", [True, False])
-def test_derivative_generated_by(lazy_loading):
-    test_ds = load_dataset(SYNTHETIC_DIR, DatasetOptions(lazy_loading=lazy_loading))
+def test_derivative_generated_by(lazy_loading, paths_mode):
+    test_ds = load_test_dataset(SYNTHETIC_DIR, DatasetOptions(lazy_loading=lazy_loading), paths_mode=paths_mode)
     schema = test_ds.get_schema()
     fmriprep_folder = test_ds.derivatives.get_folder('fmriprep')
     assert isinstance(fmriprep_folder, schema.DerivativeFolder)
@@ -22,8 +23,8 @@ def test_derivative_generated_by(lazy_loading):
     assert container.URI == "test:abc/xyz"
 
 @pytest.mark.parametrize("lazy_loading", [True, False])
-def test_derivative_dataset_description(lazy_loading):
-    test_ds = load_dataset(DS005_SMALL2_DIR, DatasetOptions(lazy_loading=lazy_loading))
+def test_derivative_dataset_description(lazy_loading, paths_mode):
+    test_ds = load_test_dataset(DS005_SMALL2_DIR, DatasetOptions(lazy_loading=lazy_loading), paths_mode=paths_mode)
     schema = test_ds.get_schema()
     dd_files = test_ds.select(schema.DatasetDescriptionFile).objects(as_list=True)
     assert len(dd_files) == 2
@@ -35,8 +36,8 @@ def test_derivative_dataset_description(lazy_loading):
     assert dd.contents['PipelineDescription']['Name'] == 'events'
 
 @pytest.mark.parametrize("lazy_loading", [True, False])
-def test_create_artifact_with_raw(lazy_loading):
-    test_ds = load_dataset(DS005_SMALL2_DIR, DatasetOptions(lazy_loading=lazy_loading))
+def test_create_artifact_with_raw(lazy_loading, paths_mode):
+    test_ds = load_test_dataset(DS005_SMALL2_DIR, DatasetOptions(lazy_loading=lazy_loading), paths_mode=paths_mode)
     sub01_json = test_ds.query(sub='01', suffix='bold', extension='.json')[0]
     derivative_folder = test_ds.create_derivative(name="unit-test")
     deriv_artifact = derivative_folder.create_artifact(raw=sub01_json)

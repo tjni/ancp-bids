@@ -63,7 +63,7 @@ def parse_bids_name(name: str):
     }
 
 
-def load_contents(file_path, return_type: str = None):
+def load_contents(file_path, return_type: str = None, vfs=None):
     """Loads the contents of the provided file path.
 
     Parameters
@@ -82,10 +82,13 @@ def load_contents(file_path, return_type: str = None):
         For example, a .json file may be returned as an ordinary Python dict or a .txt as a str value.
 
     """
-    if not os.path.exists(file_path):
+    from ancpbids.vfs import resolve_vfs
+
+    resolved_vfs = resolve_vfs(vfs)
+    if not resolved_vfs.exists(file_path):
         return None
     reader = None
-    file_name = os.path.basename(file_path)
+    file_name = resolved_vfs.basename(file_path)
     parts = os.path.splitext(file_name)
     if len(parts) > 1:
         extension = parts[-1][1:]
@@ -96,10 +99,10 @@ def load_contents(file_path, return_type: str = None):
         reader = FILE_READERS['txt']
     if reader is None:
         raise ValueError('No file reader registered to load file %s' % file_path)
-    return reader(file_path, return_type=return_type)
+    return reader(file_path, return_type=return_type, vfs=resolved_vfs)
 
 
-def write_contents(file_path: str, contents):
+def write_contents(file_path: str, contents, vfs=None):
     """Writes the provided contents to the target file path using a registered file writer.
 
     A valid file writer may be inferred by the file's extension and/or the given contents object.
@@ -113,6 +116,9 @@ def write_contents(file_path: str, contents):
         The contents to write to the target file.
 
     """
+    from ancpbids.vfs import resolve_vfs
+
+    resolved_vfs = resolve_vfs(vfs)
     writer = None
     parts = os.path.splitext(file_path)
     if len(parts) > 1:
@@ -123,7 +129,7 @@ def write_contents(file_path: str, contents):
     if not writer:
         raise ValueError("No file writer registered for file: %s" % file_path)
 
-    writer(file_path, contents)
+    writer(file_path, contents, vfs=resolved_vfs)
 
 
 def deepupdate(target, src):

@@ -13,10 +13,11 @@ implementation. ``axisCodes`` there is itself an extract of
 
 Copyright (c) BIDS Validator contributors; used under the MIT license.
 """
-import gzip as gzip_mod
 import struct
 import xml.etree.ElementTree as ET
 from typing import Any, Dict, List, Optional, Tuple
+
+from ancpbids.vfs import LocalVfs, resolve_vfs
 
 try:
     import nibabel as nib
@@ -24,10 +25,10 @@ except ImportError:  # pragma: no cover - optional dependency
     nib = None
 
 
-def parse_gzip(path: str, max_bytes: int = 1024) -> Optional[Dict[str, Any]]:
+def parse_gzip(path: str, max_bytes: int = 1024, vfs=None) -> Optional[Dict[str, Any]]:
+    resolved_vfs = resolve_vfs(vfs)
     try:
-        with open(path, 'rb') as handle:
-            buf = handle.read(max_bytes)
+        buf = resolved_vfs.read_bytes(path)[:max_bytes]
     except OSError:
         return None
     if len(buf) < 10 or buf[0] != 0x1F or buf[1] != 0x8B:
@@ -49,12 +50,13 @@ def parse_gzip(path: str, max_bytes: int = 1024) -> Optional[Dict[str, Any]]:
     return {'timestamp': timestamp, 'filename': filename, 'comment': comment}
 
 
-def parse_nifti_header(path: str) -> Optional[Dict[str, Any]]:
-    if nib is not None:
+def parse_nifti_header(path: str, vfs=None) -> Optional[Dict[str, Any]]:
+    resolved_vfs = resolve_vfs(vfs)
+    if nib is not None and isinstance(resolved_vfs, LocalVfs):
         header = _parse_nifti_nibabel(path)
         if header is not None:
             return header
-    return _parse_nifti_fallback(path)
+    return _parse_nifti_fallback(path, vfs=resolved_vfs)
 
 
 def _parse_nifti_nibabel(path: str) -> Optional[Dict[str, Any]]:
@@ -92,9 +94,10 @@ def _parse_nifti_nibabel(path: str) -> Optional[Dict[str, Any]]:
     }
 
 
-def _parse_nifti_fallback(path: str) -> Optional[Dict[str, Any]]:
+def _parse_nifti_fallback(path: str, vfs=None) -> Optional[Dict[str, Any]]:
+    resolved_vfs = resolve_vfs(vfs)
     try:
-        raw = _read_nifti_bytes(path)
+        raw = _read_nifti_bytes(path, resolved_vfs)
         if raw is None or len(raw) < 348:
             return None
         return _parse_nifti_buffer(raw)
@@ -102,10 +105,10 @@ def _parse_nifti_fallback(path: str) -> Optional[Dict[str, Any]]:
         return None
 
 
-def parse_tiff(path: str, ome: bool = False) -> Tuple[Optional[Dict], Optional[Dict]]:
+def parse_tiff(path: str, ome: bool = False, vfs=None) -> Tuple[Optional[Dict], Optional[Dict]]:
+    resolved_vfs = resolve_vfs(vfs)
     try:
-        with open(path, 'rb') as handle:
-            buf = handle.read(4096)
+        buf = resolved_vfs.read_bytes(path)[:4096]
     except OSError:
         return None, None
     if len(buf) < 8:
@@ -131,14 +134,12 @@ def _c_string(buf: bytes, offset: int) -> Tuple[str, int]:
     return buf[offset:end].decode('utf-8', errors='replace'), end + 1
 
 
-def _read_nifti_bytes(path: str) -> Optional[bytes]:
-    with open(path, 'rb') as handle:
-        head = handle.read(2)
-        handle.seek(0)
-        if head == b'\x1f\x8b':
-            with gzip_mod.open(path, 'rb') as gz:
-                return gz.read(540)
-        return handle.read(540)
+def _read_nifti_bytes(path: str, vfs) -> Optional[bytes]:
+    head = vfs.read_bytes(path)[:2]
+    if head == b'\x1f\x8b':
+        import gzip as gzip_mod
+        return gzip_mod.decompress(vfs.read_bytes(path))[:540]
+    return vfs.read_bytes(path)[:540]
 
 
 def _parse_nifti_buffer(raw: bytes) -> Dict[str, Any]:

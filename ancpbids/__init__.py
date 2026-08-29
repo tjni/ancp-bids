@@ -1,7 +1,6 @@
 import logging
-import os
 from dataclasses import dataclass
-from typing import Union, List, Optional, TYPE_CHECKING
+from typing import Union, List, Optional, Sequence, TYPE_CHECKING
 
 from ancpbids import plugins
 from ancpbids import utils
@@ -13,6 +12,7 @@ from .query import BoolExpr, Select, EqExpr, AnyExpr, AllExpr, ReExpr, CustomOpE
     EntityExpr
 from .model_base import Dataset
 from .schema import Schema
+from .vfs import LocalVfs, Vfs, call_with_supported_kwargs, default_vfs, resolve_vfs
 
 LOGGER = logging.getLogger("ancpbids")
 
@@ -45,7 +45,12 @@ class DatasetOptions(dict):
     """If the dataset has been previously made available as a pickle file '.ancpbids-dataset.pickle' at the root of the dataset folder, this option allows to ignore it by setting it to True."""
 
 
-def load_dataset(base_dir: str, options: Optional[DatasetOptions] = None) -> Dataset:
+def load_dataset(
+        base_dir: str,
+        options: Optional[DatasetOptions] = None,
+        *,
+        vfs: Optional[Vfs] = None,
+        paths: Optional[Sequence[str]] = None) -> Dataset:
     """Loads a dataset given its directory path on the file system.
 
     .. code-block::
@@ -67,28 +72,36 @@ def load_dataset(base_dir: str, options: Optional[DatasetOptions] = None) -> Dat
         a Dataset object depending on the used schema which represents the dataset as an in-memory graph
     """
     base_dir = str(base_dir)
-    if not os.path.isdir(base_dir):
+    resolved_vfs = resolve_vfs(vfs)
+    if paths is None and not resolved_vfs.is_dir(base_dir):
         raise ValueError("Invalid Directory")
 
-    if options is not None and not options.ignore_pickle_file and os.path.exists(
-            os.path.join(base_dir, plugins.plugin_pickle.ANCPBIDS_PICKLE_FILE)):
-        return unpickle_dataset(base_dir)
+    if options is not None and not options.ignore_pickle_file and resolved_vfs.exists(
+            resolved_vfs.join(base_dir, plugins.plugin_pickle.ANCPBIDS_PICKLE_FILE)):
+        ds = unpickle_dataset(base_dir, vfs=resolved_vfs)
+        return ds
 
-    schema = load_schema(base_dir)
+    schema = load_schema(base_dir, vfs=resolved_vfs)
     ds = schema.Dataset()
     ds._versioned_schema = schema
     ds.options = options
     if ds.options is None:
         ds.options = DatasetOptions()
-    ds.name = os.path.basename(base_dir)
+    ds.name = resolved_vfs.basename(base_dir)
     ds.base_dir_ = base_dir
     dataset_plugins = get_plugins(DatasetPlugin)
     for dsplugin in dataset_plugins:
-        dsplugin.execute(ds, schema)
+        call_with_supported_kwargs(
+            dsplugin.execute,
+            ds,
+            schema,
+            vfs=resolved_vfs,
+            paths=list(paths) if paths is not None else None,
+        )
     return ds
 
 
-def load_schema(base_dir: str) -> Schema:
+def load_schema(base_dir: str, vfs: Optional[Vfs] = None) -> Schema:
     """Loads a BIDS schema object which represents the static/formal definition of the BIDS specification.
 
     As per BIDS spec, a BIDS compliant dataset must have a BIDSVersion field in the dataset_description.json
@@ -106,9 +119,10 @@ def load_schema(base_dir: str) -> Schema:
     object
         A BIDS schema object which represents the static/formal definition of the BIDS specification.
     """
-    ds_descr_path = os.path.join(base_dir, "dataset_description.json")
-    if os.path.exists(ds_descr_path):
-        ds_descr = utils.load_contents(ds_descr_path)
+    resolved_vfs = resolve_vfs(vfs)
+    ds_descr_path = resolved_vfs.join(base_dir, "dataset_description.json")
+    if resolved_vfs.exists(ds_descr_path):
+        ds_descr = utils.load_contents(ds_descr_path, vfs=resolved_vfs)
         if isinstance(ds_descr, dict) and 'BIDSVersion' in ds_descr:
             schema_version = ds_descr['BIDSVersion']
             schema = utils.get_schema_by_version(schema_version)
@@ -118,7 +132,7 @@ def load_schema(base_dir: str) -> Schema:
     return model_latest
 
 
-def save_dataset(ds: object, target_dir: str, context_folder=None):
+def save_dataset(ds: object, target_dir: str, context_folder=None, *, vfs: Optional[Vfs] = None):
     """Copies the dataset graph into the provided target directory.
 
     EXPERIMENTAL/UNSTABLE
@@ -133,12 +147,19 @@ def save_dataset(ds: object, target_dir: str, context_folder=None):
         a folder node within the dataset graph to limit to
 
     """
+    resolved_vfs = resolve_vfs(vfs)
     dataset_plugins = get_plugins(WritingPlugin)
     for dsplugin in dataset_plugins:
-        dsplugin.execute(ds, target_dir, context_folder=context_folder)
+        call_with_supported_kwargs(
+            dsplugin.execute,
+            ds,
+            target_dir,
+            context_folder=context_folder,
+            vfs=resolved_vfs,
+        )
 
 
-def validate_dataset(dataset) -> ValidationPlugin.ValidationReport:
+def validate_dataset(dataset, *, vfs: Optional[Vfs] = None) -> ValidationPlugin.ValidationReport:
     """Validates a dataset and returns a report object containing any detected validation errors.
 
     Example:
@@ -161,12 +182,13 @@ def validate_dataset(dataset) -> ValidationPlugin.ValidationReport:
     ValidationPlugin.ValidationReport
         a report object containing any detected validation errors or warning
     """
-    return _internal_validate_dataset(dataset)
+    return _internal_validate_dataset(dataset, vfs=vfs)
 
 
-def _internal_validate_dataset(dataset, plugin_acceptor=None):
+def _internal_validate_dataset(dataset, plugin_acceptor=None, *, vfs: Optional[Vfs] = None):
     validation_plugins = get_plugins(ValidationPlugin)
     report = ValidationPlugin.ValidationReport()
+    report._vfs = resolve_vfs(vfs)
     for validation_plugin in validation_plugins:
         # if plugin is disabled, skip it
         if callable(plugin_acceptor) and not plugin_acceptor(validation_plugin):
@@ -175,7 +197,7 @@ def _internal_validate_dataset(dataset, plugin_acceptor=None):
     return report
 
 
-def write_derivative(ds, derivative):
+def write_derivative(ds, derivative, *, vfs: Optional[Vfs] = None):
     """Writes the provided derivative folder to the dataset.
     Note that a 'derivatives' folder will be created if not present.
 
@@ -186,7 +208,7 @@ def write_derivative(ds, derivative):
     derivative:
         the derivative folder to write
     """
-    save_dataset(ds, target_dir=ds.get_absolute_path(), context_folder=derivative)
+    save_dataset(ds, target_dir=ds.get_absolute_path(), context_folder=derivative, vfs=vfs)
 
 
 # load built-in and third-party plugins from [project.entry-points."ancpbids.plugins"]
