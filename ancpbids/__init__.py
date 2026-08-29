@@ -1,4 +1,5 @@
 import logging
+import posixpath
 from dataclasses import dataclass
 from typing import Union, List, Optional, Sequence, TYPE_CHECKING
 
@@ -77,7 +78,7 @@ def load_dataset(
         raise ValueError("Invalid Directory")
 
     if options is not None and not options.ignore_pickle_file and resolved_vfs.exists(
-            resolved_vfs.join(base_dir, plugins.plugin_pickle.ANCPBIDS_PICKLE_FILE)):
+            posixpath.join(base_dir, plugins.plugin_pickle.ANCPBIDS_PICKLE_FILE)):
         ds = unpickle_dataset(base_dir, vfs=resolved_vfs)
         return ds
 
@@ -87,7 +88,7 @@ def load_dataset(
     ds.options = options
     if ds.options is None:
         ds.options = DatasetOptions()
-    ds.name = resolved_vfs.basename(base_dir)
+    ds.name = posixpath.basename(base_dir)
     ds.base_dir_ = base_dir
     ds._vfs = resolved_vfs
     dataset_plugins = get_plugins(DatasetPlugin)
@@ -120,7 +121,7 @@ def load_schema(base_dir: str, vfs: Optional[Vfs] = None) -> Schema:
         A BIDS schema object which represents the static/formal definition of the BIDS specification.
     """
     resolved_vfs = resolve_vfs(vfs)
-    ds_descr_path = resolved_vfs.join(base_dir, "dataset_description.json")
+    ds_descr_path = posixpath.join(base_dir, "dataset_description.json")
     if resolved_vfs.exists(ds_descr_path):
         ds_descr = utils.load_contents(ds_descr_path, vfs=resolved_vfs)
         if isinstance(ds_descr, dict) and 'BIDSVersion' in ds_descr:

@@ -1,4 +1,5 @@
 import pickle
+import posixpath
 from types import ModuleType
 
 from ancpbids import utils
@@ -33,13 +34,13 @@ class DatasetUnpickler(pickle.Unpickler):
 
 def pickle_dataset(dataset, custom_dir=None):
     resolved_vfs = dataset_vfs(dataset)
-    ds_path = resolved_vfs.join(custom_dir or dataset.get_absolute_path(), ANCPBIDS_PICKLE_FILE)
+    ds_path = posixpath.join(custom_dir or dataset.get_absolute_path(), ANCPBIDS_PICKLE_FILE)
     resolved_vfs.write_bytes(ds_path, _dump_dataset(dataset))
 
 
 def unpickle_dataset(dataset_path, vfs=None) -> Dataset:
     resolved_vfs = resolve_vfs(vfs)
-    ds_path = resolved_vfs.join(dataset_path, ANCPBIDS_PICKLE_FILE)
+    ds_path = posixpath.join(dataset_path, ANCPBIDS_PICKLE_FILE)
     ds = _load_dataset(resolved_vfs.read_bytes(ds_path))
     ds._vfs = resolved_vfs
     return ds

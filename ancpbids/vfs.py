@@ -2,7 +2,8 @@
 from __future__ import annotations
 
 import os
-from typing import Any, Optional, Protocol, Sequence, runtime_checkable
+import posixpath
+from typing import Optional, Protocol, Sequence, runtime_checkable
 
 _DEFAULT_VFS: Optional["LocalVfs"] = None
 
@@ -25,16 +26,6 @@ class Vfs(Protocol):
 
     def write_bytes(self, path: str, content: bytes) -> None: ...
 
-    def join(self, *parts: str) -> str: ...
-
-    def basename(self, path: str) -> str: ...
-
-    def dirname(self, path: str) -> str: ...
-
-    def normpath(self, path: str) -> str: ...
-
-    def abspath(self, path: str) -> str: ...
-
     def getsize(self, path: str) -> int: ...
 
     def makedirs(self, path: str) -> None: ...
@@ -43,55 +34,45 @@ class Vfs(Protocol):
 class LocalVfs:
     """POSIX filesystem backend (default)."""
 
+    @staticmethod
+    def _local_path(path: str) -> str:
+        return os.path.normpath(path.replace("\\", "/"))
+
     def is_dir(self, path: str) -> bool:
-        return os.path.isdir(path)
+        return os.path.isdir(self._local_path(path))
 
     def is_file(self, path: str) -> bool:
-        return os.path.isfile(path)
+        return os.path.isfile(self._local_path(path))
 
     def exists(self, path: str) -> bool:
-        return os.path.exists(path)
+        return os.path.exists(self._local_path(path))
 
     def listdir(self, path: str) -> Sequence[str]:
-        return os.listdir(path)
+        return os.listdir(self._local_path(path))
 
     def read_text(self, path: str, encoding: str = "utf-8") -> str:
-        with open(path, encoding=encoding) as handle:
+        with open(self._local_path(path), encoding=encoding) as handle:
             return handle.read()
 
     def read_bytes(self, path: str) -> bytes:
-        with open(path, "rb") as handle:
+        with open(self._local_path(path), "rb") as handle:
             return handle.read()
 
     def write_text(self, path: str, content: str, encoding: str = "utf-8") -> None:
-        with open(path, "w", encoding=encoding) as handle:
+        with open(self._local_path(path), "w", encoding=encoding) as handle:
             handle.write(content)
 
     def write_bytes(self, path: str, content: bytes) -> None:
-        with open(path, "wb") as handle:
+        with open(self._local_path(path), "wb") as handle:
             handle.write(content)
 
-    def join(self, *parts: str) -> str:
-        return os.path.join(*parts)
-
-    def basename(self, path: str) -> str:
-        return os.path.basename(path)
-
-    def dirname(self, path: str) -> str:
-        return os.path.dirname(path)
-
-    def normpath(self, path: str) -> str:
-        return os.path.normpath(path)
-
-    def abspath(self, path: str) -> str:
-        return os.path.abspath(path)
-
     def getsize(self, path: str) -> int:
-        return os.path.getsize(path)
+        return os.path.getsize(self._local_path(path))
 
     def makedirs(self, path: str) -> None:
-        if not self.exists(path):
-            os.makedirs(path)
+        local_path = self._local_path(path)
+        if not os.path.exists(local_path):
+            os.makedirs(local_path)
 
 
 def default_vfs() -> LocalVfs:
@@ -135,3 +116,7 @@ def call_with_supported_kwargs(func, /, *args, **kwargs):
 def split_rel_path(rel_path: str) -> list[str]:
     normalized = rel_path.replace("\\", "/")
     return [part for part in normalized.split("/") if part]
+
+
+def join_path(*parts: str) -> str:
+    return posixpath.normpath(posixpath.join(*parts))

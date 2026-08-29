@@ -1,5 +1,6 @@
 import logging
 import os
+import posixpath
 from typing import Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -88,7 +89,7 @@ def load_contents(file_path, return_type: str = None, vfs=None):
     if not resolved_vfs.exists(file_path):
         return None
     reader = None
-    file_name = resolved_vfs.basename(file_path)
+    file_name = posixpath.basename(file_path)
     parts = os.path.splitext(file_name)
     if len(parts) > 1:
         extension = parts[-1][1:]

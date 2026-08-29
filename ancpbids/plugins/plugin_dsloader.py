@@ -1,5 +1,6 @@
 import fnmatch
 import inspect
+import posixpath
 import re
 
 from .plugin_files_handlers import read_plain_text
@@ -52,7 +53,7 @@ class DatasetPopulationPlugin(DatasetPlugin):
         if self.options.ignore:
             patterns = []
             if isinstance(self.options.ignore, bool):
-                bidsignore_file = self.vfs.join(base_dir, ".bidsignore")
+                bidsignore_file = posixpath.join(base_dir, ".bidsignore")
                 if self.vfs.exists(bidsignore_file):
                     patterns = read_plain_text(bidsignore_file, vfs=self.vfs)
             elif isinstance(self.options.ignore, list):
@@ -236,7 +237,7 @@ class DatasetPopulationPlugin(DatasetPlugin):
         rel_base = dir_path[len(ds_path):]
         entries = sorted(self.vfs.listdir(dir_path), key=lambda name: name)
         for name in entries:
-            entry_path = self.vfs.join(dir_path, name)
+            entry_path = posixpath.join(dir_path, name)
             rel_path = f'{rel_base}/{name}'[1:] if rel_base else name
             if self.bidsignore(rel_path):
                 continue

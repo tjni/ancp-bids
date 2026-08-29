@@ -1,4 +1,5 @@
 import inspect
+import posixpath
 
 import ancpbids
 from ancpbids.plugin import WritingPlugin, hook
@@ -42,7 +43,7 @@ class DatasetWritingPlugin(WritingPlugin):
 
     def _type_handler_File(self, src_dir, target_dir, file, vfs, new_file_name=None):
         abs_file_name = file.get_absolute_path()
-        dir_name = vfs.dirname(abs_file_name)
+        dir_name = posixpath.dirname(abs_file_name)
         if not vfs.exists(dir_name):
             vfs.makedirs(dir_name)
 
@@ -66,7 +67,7 @@ class DatasetWritingPlugin(WritingPlugin):
         ancpbids.utils.write_contents(abs_file_name, file, vfs=vfs)
 
     def _type_handler_Folder(self, src_dir, target_dir, folder, vfs, traverse_children=False):
-        new_dir = vfs.join(target_dir, folder.get_relative_path())
+        new_dir = posixpath.join(target_dir, folder.get_relative_path())
         if not vfs.exists(new_dir):
             vfs.makedirs(new_dir)
 

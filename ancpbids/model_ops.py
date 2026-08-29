@@ -4,12 +4,11 @@ These mixins are bases of the types in model_base. Version-specific logic
 (enums, create_dataset, entity value processing) lives on Schema.
 """
 import fnmatch
-import os
 from enum import Enum
 from typing import Any, Callable, Dict, Iterator, List, Optional, TYPE_CHECKING, Type, Union
 
 from ancpbids.utils import convert_to_relative, resolve_segments
-from ancpbids.vfs import dataset_vfs, resolve_vfs
+from ancpbids.vfs import dataset_vfs, join_path
 
 if TYPE_CHECKING:
     from ancpbids.query import Select
@@ -122,6 +121,7 @@ def _get_path(
         file_name: Optional[str] = None,
         absolute: bool = True) -> str:
     from .model_base import Dataset
+
     segments = []
     if file_name:
         segments.append(file_name)
@@ -135,8 +135,9 @@ def _get_path(
             break
         segments.insert(0, current_folder.name)
         current_folder = current_folder.parent_object_
-    path = os.path.join(*segments) if segments else ''
-    return resolve_vfs().normpath(path)
+    if not segments:
+        return ""
+    return join_path(*segments)
 
 
 class FileOps:
