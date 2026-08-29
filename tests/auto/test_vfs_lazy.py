@@ -1,5 +1,5 @@
 from ancpbids import DatasetOptions, load_dataset, validate_dataset
-from ancpbids.vfs import LocalVfs
+from ancpbids.vfs import LocalVfs, call_with_supported_kwargs
 
 from ..base_test_case import DS005_DIR
 from ..load_helpers import collect_dataset_paths
@@ -47,3 +47,19 @@ def test_validate_with_lazy_loading_uses_dataset_vfs():
     report = validate_dataset(dataset)
     assert report is not None
     assert vfs.read_paths
+
+
+def test_call_with_supported_kwargs_passes_only_accepted_kwargs():
+    received = {}
+
+    def target(required, optional=None):
+        received["required"] = required
+        received["optional"] = optional
+
+    call_with_supported_kwargs(
+        target,
+        1,
+        optional="yes",
+        unknown="drop-me",
+    )
+    assert received == {"required": 1, "optional": "yes"}

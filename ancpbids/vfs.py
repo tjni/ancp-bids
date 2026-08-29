@@ -119,17 +119,11 @@ def dataset_vfs(model) -> Vfs:
     return default_vfs()
 
 
-_SIGNATURE_CACHE: dict[int, Any] = {}
-
-
 def call_with_supported_kwargs(func, /, *args, **kwargs):
     """Invoke *func* passing only keyword arguments it accepts."""
     import inspect
 
-    params = _SIGNATURE_CACHE.get(id(func))
-    if params is None:
-        params = inspect.signature(func).parameters
-        _SIGNATURE_CACHE[id(func)] = params
+    params = inspect.signature(func).parameters
     supported = {
         key: value
         for key, value in kwargs.items()

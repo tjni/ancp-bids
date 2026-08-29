@@ -149,12 +149,10 @@ def save_dataset(ds: object, target_dir: str, context_folder=None):
     """
     dataset_plugins = get_plugins(WritingPlugin)
     for dsplugin in dataset_plugins:
-        call_with_supported_kwargs(
-            dsplugin.execute,
-            ds,
-            target_dir,
-            context_folder=context_folder,
-        )
+        args = (ds, target_dir)
+        if context_folder is not None:
+            args = (ds, target_dir, context_folder)
+        call_with_supported_kwargs(dsplugin.execute, *args)
 
 
 def validate_dataset(dataset) -> ValidationPlugin.ValidationReport:
