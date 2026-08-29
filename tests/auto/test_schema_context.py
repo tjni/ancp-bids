@@ -6,7 +6,14 @@ import tempfile
 import pytest
 
 from ancpbids import validate_dataset, DatasetOptions
-from ancpbids.schema.headers import parse_gzip, parse_nifti_header, axis_codes
+from ancpbids.schema.headers import (
+    _decompress_gzip_prefix,
+    _read_nifti_bytes,
+    parse_gzip,
+    parse_nifti_header,
+    axis_codes,
+)
+from ancpbids.vfs import LocalVfs
 from ancpbids.schema.validate import _value_matches, _load_binary_headers
 from ..base_test_case import DS005_DIR
 from tests.load_helpers import load_test_dataset
@@ -29,9 +36,9 @@ def _write_minimal_nifti_gz(path):
 
 
 def test_parse_gzip_minimal():
-    with tempfile.NamedTemporaryFile(suffix='.gz', delete=False) as handle:
+    path = _temp_path('.gz')
+    with open(path, 'wb') as handle:
         handle.write(b'\x1f\x8b\x08\x00\x01\x00\x00\x00\x00\x03')
-        path = handle.name
     try:
         result = parse_gzip(path)
         assert result is not None
@@ -40,8 +47,15 @@ def test_parse_gzip_minimal():
         os.unlink(path)
 
 
+def _temp_path(suffix: str) -> str:
+    handle = tempfile.NamedTemporaryFile(suffix=suffix, delete=False)
+    path = handle.name
+    handle.close()
+    return path
+
+
 def test_parse_nifti_header_synthetic():
-    path = tempfile.mktemp(suffix='.nii.gz')
+    path = _temp_path('.nii.gz')
     try:
         _write_minimal_nifti_gz(path)
         header = parse_nifti_header(path)
@@ -54,16 +68,41 @@ def test_parse_nifti_header_synthetic():
         os.unlink(path)
 
 
-def test_parse_nifti_fallback_without_nibabel(monkeypatch):
-    import ancpbids.schema.headers as headers
-
-    monkeypatch.setattr(headers, 'nib', None)
-    path = tempfile.mktemp(suffix='.nii.gz')
+def test_decompress_gzip_prefix_matches_full_decompress():
+    path = _temp_path('.nii.gz')
     try:
         _write_minimal_nifti_gz(path)
-        header = headers.parse_nifti_header(path)
-        assert header is not None
-        assert header['shape'] == [4, 4, 4]
+        with open(path, 'rb') as handle:
+            compressed = handle.read()
+        with gzip.open(path, 'rb') as handle:
+            full = handle.read()
+        partial = _decompress_gzip_prefix(compressed, 540)
+        assert partial == full[:540]
+    finally:
+        os.unlink(path)
+
+
+def test_read_nifti_bytes_streams_local_file():
+    path = _temp_path('.nii.gz')
+    try:
+        _write_minimal_nifti_gz(path)
+        with gzip.open(path, 'rb') as handle:
+            full = handle.read()
+        header_bytes = _read_nifti_bytes(path, LocalVfs())
+        assert header_bytes == full[:540]
+    finally:
+        os.unlink(path)
+
+
+def test_local_vfs_read_bytes_range():
+    path = _temp_path('.bin')
+    try:
+        payload = b'abcdefgh'
+        with open(path, 'wb') as handle:
+            handle.write(payload)
+        vfs = LocalVfs()
+        assert vfs.read_bytes_range(path, 2, 3) == b'cde'
+        assert vfs.read_bytes_range(path, 0, 0) == b''
     finally:
         os.unlink(path)
 
@@ -89,7 +128,7 @@ def test_value_matches_constraints():
 
 
 def test_load_binary_headers_into_context():
-    path = tempfile.mktemp(suffix='_bold.nii.gz')
+    path = _temp_path('_bold.nii.gz')
     try:
         _write_minimal_nifti_gz(path)
 

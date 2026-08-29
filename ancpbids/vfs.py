@@ -22,6 +22,8 @@ class Vfs(Protocol):
 
     def read_bytes(self, path: str) -> bytes: ...
 
+    def read_bytes_range(self, path: str, offset: int, length: int) -> bytes: ...
+
     def write_text(self, path: str, content: str, encoding: str = "utf-8") -> None: ...
 
     def write_bytes(self, path: str, content: bytes) -> None: ...
@@ -57,6 +59,13 @@ class LocalVfs:
     def read_bytes(self, path: str) -> bytes:
         with open(self._local_path(path), "rb") as handle:
             return handle.read()
+
+    def read_bytes_range(self, path: str, offset: int, length: int) -> bytes:
+        if length <= 0:
+            return b""
+        with open(self._local_path(path), "rb") as handle:
+            handle.seek(max(offset, 0))
+            return handle.read(length)
 
     def write_text(self, path: str, content: str, encoding: str = "utf-8") -> None:
         with open(self._local_path(path), "w", encoding=encoding) as handle:

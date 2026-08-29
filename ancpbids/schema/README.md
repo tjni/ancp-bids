@@ -11,7 +11,7 @@ dataset graph (no Deno shell-out). Entry points:
 | `context.py` | Rich file context (sidecar, columns, associations, headers) |
 | `values.py` | Value constraints and issue helpers |
 | `rules/` | One module per schema rule family |
-| `headers.py` | NIfTI/GZIP/TIFF/OME header readers (nibabel preferred for NIfTI) |
+| `headers.py` | NIfTI/GZIP/TIFF/OME header readers (stdlib, bids-validator aligned) |
 | `versions/` | Vendored official `schema_v*.json` (runtime source of truth) |
 | `stubs/` | Generated `.py` / `.pyi` shims for IDE enum literals |
 | `../plugins/plugin_schema_validator.py` | Thin `ValidationPlugin` wrappers per rule family |

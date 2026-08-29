@@ -1,7 +1,6 @@
 """Binary header readers for schema validation context.
 
-NIfTI headers prefer nibabel when installed; otherwise a stdlib fallback is used.
-GZIP/TIFF/OME parsing is stdlib-only.
+NIfTI/GZIP/TIFF/OME parsing is stdlib-only (aligned with bids-validator header reads).
 
 Adapted from the BIDS Validator (https://github.com/bids-standard/bids-validator),
 especially ``src/files/nifti.ts`` (``loadHeader``, ``axisCodes``), ``gzip.ts``, and
@@ -14,21 +13,17 @@ implementation. ``axisCodes`` there is itself an extract of
 Copyright (c) BIDS Validator contributors; used under the MIT license.
 """
 import struct
+import zlib
 import xml.etree.ElementTree as ET
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from ancpbids.vfs import LocalVfs, resolve_vfs
-
-try:
-    import nibabel as nib
-except ImportError:  # pragma: no cover - optional dependency
-    nib = None
+from ancpbids.vfs import resolve_vfs
 
 
 def parse_gzip(path: str, max_bytes: int = 1024, vfs=None) -> Optional[Dict[str, Any]]:
     resolved_vfs = resolve_vfs(vfs)
     try:
-        buf = resolved_vfs.read_bytes(path)[:max_bytes]
+        buf = _vfs_read_range(resolved_vfs, path, 0, max_bytes)
     except OSError:
         return None
     if len(buf) < 10 or buf[0] != 0x1F or buf[1] != 0x8B:
@@ -52,50 +47,6 @@ def parse_gzip(path: str, max_bytes: int = 1024, vfs=None) -> Optional[Dict[str,
 
 def parse_nifti_header(path: str, vfs=None) -> Optional[Dict[str, Any]]:
     resolved_vfs = resolve_vfs(vfs)
-    if nib is not None and isinstance(resolved_vfs, LocalVfs):
-        header = _parse_nifti_nibabel(path)
-        if header is not None:
-            return header
-    return _parse_nifti_fallback(path, vfs=resolved_vfs)
-
-
-def _parse_nifti_nibabel(path: str) -> Optional[Dict[str, Any]]:
-    try:
-        image = nib.load(path)
-        hdr = image.header
-        affine = image.affine
-    except Exception:
-        return None
-    dims = [int(v) for v in list(hdr['dim'])]
-    pixdims = [round(float(v) * 1000) / 1000 for v in list(hdr['pixdim'])]
-    ndim = max(0, min(int(dims[0]), 7))
-    xyzt = int(hdr['xyzt_units'])
-    dim_info = int(hdr['dim_info'])
-    affine_rows = affine.tolist() if hasattr(affine, 'tolist') else list(affine)
-    if len(affine_rows) == 3:
-        affine_rows = affine_rows + [[0.0, 0.0, 0.0, 1.0]]
-    return {
-        'dim': dims,
-        'pixdim': pixdims,
-        'shape': dims[1:ndim + 1],
-        'voxel_sizes': pixdims[1:ndim + 1],
-        'dim_info': {
-            'freq': dim_info & 0x03,
-            'phase': (dim_info >> 2) & 0x03,
-            'slice': (dim_info >> 4) & 0x03,
-        },
-        'xyzt_units': {
-            'xyz': ['unknown', 'meter', 'mm', 'um'][xyzt & 0x03],
-            't': ['unknown', 'sec', 'msec', 'usec'][(xyzt >> 3) & 0x03],
-        },
-        'qform_code': int(hdr['qform_code']),
-        'sform_code': int(hdr['sform_code']),
-        'axis_codes': axis_codes(affine_rows),
-    }
-
-
-def _parse_nifti_fallback(path: str, vfs=None) -> Optional[Dict[str, Any]]:
-    resolved_vfs = resolve_vfs(vfs)
     try:
         raw = _read_nifti_bytes(path, resolved_vfs)
         if raw is None or len(raw) < 348:
@@ -108,7 +59,7 @@ def _parse_nifti_fallback(path: str, vfs=None) -> Optional[Dict[str, Any]]:
 def parse_tiff(path: str, ome: bool = False, vfs=None) -> Tuple[Optional[Dict], Optional[Dict]]:
     resolved_vfs = resolve_vfs(vfs)
     try:
-        buf = resolved_vfs.read_bytes(path)[:4096]
+        buf = _vfs_read_range(resolved_vfs, path, 0, 4096)
     except OSError:
         return None, None
     if len(buf) < 8:
@@ -134,12 +85,61 @@ def _c_string(buf: bytes, offset: int) -> Tuple[str, int]:
     return buf[offset:end].decode('utf-8', errors='replace'), end + 1
 
 
+_NIFTI_HEADER_BYTES = 540
+_GZIP_WBITS = 16 + zlib.MAX_WBITS
+
+
+def _decompress_gzip_prefix(data: bytes, nbytes: int) -> bytes:
+    """Decompress only the first *nbytes* of a gzip member (BIDS Validator pattern)."""
+    decompressor = zlib.decompressobj(_GZIP_WBITS)
+    out = bytearray()
+    offset = 0
+    chunk_size = 1024
+    while len(out) < nbytes and offset < len(data):
+        chunk = data[offset:offset + chunk_size]
+        offset += len(chunk)
+        if not chunk:
+            break
+        out.extend(decompressor.decompress(chunk))
+    return bytes(out[:nbytes])
+
+
+def _stream_gzip_prefix(read: Callable[[int], bytes], nbytes: int) -> bytes:
+    decompressor = zlib.decompressobj(_GZIP_WBITS)
+    out = bytearray()
+    while len(out) < nbytes:
+        chunk = read(8192)
+        if not chunk:
+            break
+        out.extend(decompressor.decompress(chunk))
+    return bytes(out[:nbytes])
+
+
+def _vfs_read_range(vfs, path: str, offset: int, length: int) -> bytes:
+    if length <= 0:
+        return b""
+    read_range = getattr(vfs, 'read_bytes_range', None)
+    if callable(read_range):
+        return read_range(path, offset, length)
+    return vfs.read_bytes(path)[offset:offset + length]
+
+
 def _read_nifti_bytes(path: str, vfs) -> Optional[bytes]:
-    head = vfs.read_bytes(path)[:2]
-    if head == b'\x1f\x8b':
-        import gzip as gzip_mod
-        return gzip_mod.decompress(vfs.read_bytes(path))[:540]
-    return vfs.read_bytes(path)[:540]
+    try:
+        head = _vfs_read_range(vfs, path, 0, 2)
+        if head == b'\x1f\x8b':
+            offset = 0
+
+            def read(n: int) -> bytes:
+                nonlocal offset
+                data = _vfs_read_range(vfs, path, offset, n)
+                offset += len(data)
+                return data
+
+            return _stream_gzip_prefix(read, _NIFTI_HEADER_BYTES)
+        return _vfs_read_range(vfs, path, 0, _NIFTI_HEADER_BYTES)
+    except OSError:
+        return None
 
 
 def _parse_nifti_buffer(raw: bytes) -> Dict[str, Any]:
