@@ -6,17 +6,17 @@ from .plugin_files_handlers import read_plain_text
 from .. import utils
 from ..plugin import DatasetPlugin, hook
 from ..model_base import *
-from ..vfs import resolve_vfs, split_rel_path
+from ..vfs import dataset_vfs, split_rel_path
 
 
 @hook(ranking=0, system=True)
 class DatasetPopulationPlugin(DatasetPlugin):
 
-    def execute(self, dataset, schema, vfs=None, paths=None):
+    def execute(self, dataset, schema, paths=None):
         base_dir = str(dataset.base_dir_)
         self.schema = schema
         self.options = dataset.options
-        self.vfs = resolve_vfs(vfs)
+        self.vfs = dataset_vfs(dataset)
         self._load_bidsignore(base_dir)
 
         if paths is not None:

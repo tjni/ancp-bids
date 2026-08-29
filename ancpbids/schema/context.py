@@ -2,7 +2,7 @@
 import gzip as gzip_mod
 
 from ancpbids.model_base import Artifact, DatatypeFolder, DerivativeFolder, Subject
-from ancpbids.vfs import resolve_vfs
+from ancpbids.vfs import dataset_vfs
 
 from .headers import parse_gzip, parse_nifti_header, parse_tiff
 from .session import queue_issue, selectors_match
@@ -18,10 +18,10 @@ def build_context(session, file, rich=False):
         ctx = dict(basic_context(file, session))
         ctx['subject'] = session.subject_context(file)
         ctx['sidecar'] = sidecar(file)
-        ctx['json'] = load_json(file, vfs=session.vfs)
+        ctx['json'] = load_json(file)
         ctx['associations'] = associations(file, session, ctx)
         ctx['columns'] = load_columns(file, session, ctx)
-        ctx['size'] = file_size(file, vfs=session.vfs)
+        ctx['size'] = file_size(file)
         load_binary_headers(file, ctx, session)
         session._contexts[(file_id, True)] = ctx
         session._contexts[(file_id, False)] = ctx
@@ -38,25 +38,24 @@ def build_context(session, file, rich=False):
     return ctx
 
 
-def json_contents(file, vfs=None):
+def json_contents(file):
     if file is None:
         return {}
     value = getattr(file, 'contents', None)
     if value is None and hasattr(file, 'load_contents'):
-        value = file.load_contents(vfs=vfs)
+        value = file.load_contents()
     return value if isinstance(value, dict) else {}
 
 
-def load_json(file, vfs=None):
+def load_json(file):
     if file is None or not file.name.endswith('.json'):
         return None
-    return json_contents(file, vfs=vfs)
+    return json_contents(file)
 
 
 def load_columns(file, session=None, ctx=None):
     if file is None:
         return None
-    vfs = session.vfs if session is not None else None
     extension = getattr(file, 'extension', None) or ''
     suffix = getattr(file, 'suffix', None)
     if extension == '.tsv.gz' or (extension == '.tsv' and suffix == 'motion'):
@@ -65,7 +64,7 @@ def load_columns(file, session=None, ctx=None):
         return None
     rows = getattr(file, 'contents', None)
     if rows is None and hasattr(file, 'load_contents'):
-        rows = file.load_contents(vfs=vfs)
+        rows = file.load_contents()
     if not isinstance(rows, list):
         return load_tsv_from_disk(file, session)
     if not rows:
@@ -97,11 +96,11 @@ def load_headerless_columns(file, session, ctx):
         headers = channels.get('name')
     if not headers:
         return None
-    size = file_size(file, vfs=session.vfs if session is not None else None)
+    size = file_size(file)
     if size == 0:
         return None
     try:
-        lines = read_text_lines(file, gzipped=compressed, vfs=session.vfs if session else None)
+        lines = read_text_lines(file, gzipped=compressed)
     except OSError:
         if compressed and session is not None:
             queue_issue(session, 'error', 'Invalid gzip', file, 'INVALID_GZIP')
@@ -111,7 +110,7 @@ def load_headerless_columns(file, session, ctx):
 
 def load_tsv_from_disk(file, session):
     try:
-        lines = read_text_lines(file, gzipped=False, vfs=session.vfs if session else None)
+        lines = read_text_lines(file, gzipped=False)
     except OSError:
         return {}
     if not lines:
@@ -122,8 +121,8 @@ def load_tsv_from_disk(file, session):
     return columns_from_lines(headers, lines[1:], file, session, start_line=2)
 
 
-def read_text_lines(file, gzipped=False, vfs=None):
-    resolved_vfs = resolve_vfs(vfs)
+def read_text_lines(file, gzipped=False):
+    resolved_vfs = dataset_vfs(file)
     path = file.get_absolute_path()
     if gzipped:
         try:
@@ -182,9 +181,9 @@ def sidecar(file):
         return {}
 
 
-def file_size(file, vfs=None):
+def file_size(file):
     try:
-        return resolve_vfs(vfs).getsize(file.get_absolute_path())
+        return dataset_vfs(file).getsize(file.get_absolute_path())
     except OSError:
         return None
 
@@ -202,7 +201,7 @@ def basic_context(file, session):
     if isinstance(file, Artifact):
         for key, value in file.entities.items():
             entities[session.entity_long.get(key, key)] = value
-    description = local_dataset_description(file, session.dataset_description, vfs=session.vfs)
+    description = local_dataset_description(file, session.dataset_description)
     dataset_ctx = dict(session.dataset_ctx)
     dataset_ctx['dataset_description'] = description
     return {
@@ -239,8 +238,7 @@ def ancestor_subject(file):
 
 def load_binary_headers(file, ctx, session=None):
     path = file.get_absolute_path()
-    vfs = session.vfs if session is not None else None
-    resolved_vfs = resolve_vfs(vfs)
+    resolved_vfs = dataset_vfs(file)
     extension = file.extension or ''
     if extension.endswith('.gz'):
         ctx['gzip'] = parse_gzip(path, vfs=resolved_vfs)
@@ -261,11 +259,11 @@ def load_binary_headers(file, ctx, session=None):
         ctx['ome'] = ome_meta
 
 
-def local_dataset_description(file, root_description, vfs=None):
+def local_dataset_description(file, root_description):
     current = file
     while current is not None:
         if isinstance(current, DerivativeFolder):
-            contents = json_contents(current.dataset_description, vfs=vfs)
+            contents = json_contents(current.dataset_description)
             return contents or {'DatasetType': 'derivative'}
         current = getattr(current, 'parent_object_', None)
     return root_description
@@ -380,7 +378,7 @@ def exact_associated(file, matches, allowed_extra):
 def association_context(found, name, session):
     if name == 'coordsystems':
         files = found if isinstance(found, list) else ([found] if found else [])
-        return coordsystems_context(files, vfs=session.vfs)
+        return coordsystems_context(files)
     if found is None:
         return None
     if isinstance(found, list):
@@ -392,7 +390,7 @@ def association_context(found, name, session):
         return {'path': path, 'sidecar': sidecar(found)}
     name_on_disk = found.name
     if name_on_disk.endswith('.bval') or name_on_disk.endswith('.bvec'):
-        return bval_bvec_context(found, path, vfs=session.vfs)
+        return bval_bvec_context(found, path)
     if isinstance(found, Artifact) and found.extension == '.json':
         return {'path': path}
     ctx = {'path': path, 'n_rows': None}
@@ -405,7 +403,7 @@ def association_context(found, name, session):
     return ctx
 
 
-def coordsystems_context(files, vfs=None):
+def coordsystems_context(files):
     if not files:
         return None
     paths = []
@@ -415,7 +413,7 @@ def coordsystems_context(files, vfs=None):
         paths.append(schema_path(item))
         ents = item.get_entities() if isinstance(item, Artifact) else {}
         spaces.append(ents.get('space'))
-        contents = json_contents(item, vfs=vfs)
+        contents = json_contents(item)
         parent = contents.get('ParentCoordinateSystem')
         if parent:
             parents.append(parent)
@@ -426,9 +424,9 @@ def coordsystems_context(files, vfs=None):
     }
 
 
-def bval_bvec_context(file, path, vfs=None):
+def bval_bvec_context(file, path):
     try:
-        text = resolve_vfs(vfs).read_text(file.get_absolute_path())
+        text = dataset_vfs(file).read_text(file.get_absolute_path())
     except OSError:
         return {'path': path, 'n_cols': 0, 'n_rows': 0, 'values': []}
     rows = [line.split() for line in text.strip().splitlines() if line.strip()]

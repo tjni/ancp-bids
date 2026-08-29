@@ -1,4 +1,3 @@
-import os
 import tempfile
 
 import ancpbids.model_base

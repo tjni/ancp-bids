@@ -105,6 +105,20 @@ def resolve_vfs(vfs: Optional[Vfs] = None) -> Vfs:
     return vfs if vfs is not None else default_vfs()
 
 
+def dataset_vfs(model) -> Vfs:
+    from ancpbids.model_base import Dataset
+
+    current = model
+    while current is not None:
+        if isinstance(current, Dataset):
+            stored = getattr(current, "_vfs", None)
+            if stored is not None:
+                return stored
+            break
+        current = getattr(current, "parent_object_", None)
+    return default_vfs()
+
+
 _SIGNATURE_CACHE: dict[int, Any] = {}
 
 

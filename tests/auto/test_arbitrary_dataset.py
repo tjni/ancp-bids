@@ -1,5 +1,4 @@
 import os
-import ancpbids
 from ..base_test_case import RESOURCES_FOLDER
 from tests.load_helpers import load_test_dataset, load_test_layout
 

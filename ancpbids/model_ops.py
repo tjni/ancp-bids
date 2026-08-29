@@ -9,7 +9,7 @@ from enum import Enum
 from typing import Any, Callable, Dict, Iterator, List, Optional, TYPE_CHECKING, Type, Union
 
 from ancpbids.utils import convert_to_relative, resolve_segments
-from ancpbids.vfs import resolve_vfs
+from ancpbids.vfs import dataset_vfs, resolve_vfs
 
 if TYPE_CHECKING:
     from ancpbids.query import Select
@@ -136,21 +136,18 @@ def _get_path(
         segments.insert(0, current_folder.name)
         current_folder = current_folder.parent_object_
     path = os.path.join(*segments) if segments else ''
-    path = os.path.normpath(path)
-    if absolute:
-        path = os.path.abspath(path)
-    return path
+    return resolve_vfs().normpath(path)
 
 
 class FileOps:
     name: str
     parent_object_: Optional["Folder"]
 
-    def load_contents(self, vfs=None) -> Any:
+    def load_contents(self) -> Any:
         from ancpbids import utils
 
         file_path = _get_path(self.parent_object_, self.name, True)
-        return utils.load_contents(file_path, vfs=resolve_vfs(vfs))
+        return utils.load_contents(file_path, vfs=dataset_vfs(self))
 
     def get_absolute_path(self) -> str:
         return _get_path(self.parent_object_, self.name, True)
@@ -236,13 +233,13 @@ class FolderOps:
         from ancpbids.query import query_entities
         return query_entities(self, scope, sort, long_form)
 
-    def load_file_contents(self, file_name: str, return_type: Optional[str] = None, vfs=None) -> Any:
+    def load_file_contents(self, file_name: str, return_type: Optional[str] = None) -> Any:
         from ancpbids import utils
 
         return utils.load_contents(
             _get_path(self, file_name, True),
             return_type,
-            vfs=resolve_vfs(vfs),
+            vfs=dataset_vfs(self),
         )
 
     def get_absolute_path(self, file_name: Optional[str] = None) -> str:

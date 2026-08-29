@@ -2,13 +2,13 @@ import inspect
 
 import ancpbids
 from ancpbids.plugin import WritingPlugin, hook
-from ancpbids.vfs import resolve_vfs
+from ancpbids.vfs import dataset_vfs
 
 
 @hook(ranking=0, system=True)
 class DatasetWritingPlugin(WritingPlugin):
-    def execute(self, ds, target_dir: str, context_folder=None, src_dir: str = None, vfs=None):
-        resolved_vfs = resolve_vfs(vfs)
+    def execute(self, ds, target_dir: str, context_folder=None, src_dir: str = None):
+        resolved_vfs = dataset_vfs(ds)
         if context_folder is None and resolved_vfs.exists(target_dir) and len(resolved_vfs.listdir(target_dir)) > 0:
             raise ValueError("Directory not empty: " + target_dir)
 
@@ -114,7 +114,7 @@ _TYPE_MAPPERS = {name: obj for name, obj in inspect.getmembers(DatasetWritingPlu
                  inspect.isfunction(obj) and obj.__name__.startswith('_type_handler_')}
 
 
-def write_artifact(artifact, vfs=None):
+def write_artifact(artifact):
     dummy_inst = DatasetWritingPlugin()
-    dummy_inst._type_handler_Artifact(None, None, artifact, resolve_vfs(vfs))
+    dummy_inst._type_handler_Artifact(None, None, artifact, dataset_vfs(artifact))
     return artifact.get_absolute_path()

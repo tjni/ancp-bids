@@ -3,7 +3,7 @@ from types import ModuleType
 
 from ancpbids import utils
 from ancpbids.model_base import Dataset
-from ancpbids.vfs import resolve_vfs
+from ancpbids.vfs import dataset_vfs, resolve_vfs
 
 ANCP_BIDS_SCHEMA_VERSION = "AncpBIDSSchemaVersion"
 
@@ -31,8 +31,8 @@ class DatasetUnpickler(pickle.Unpickler):
         raise pickle.UnpicklingError(f"unsupported persistent object: {pid}")
 
 
-def pickle_dataset(dataset, custom_dir=None, vfs=None):
-    resolved_vfs = resolve_vfs(vfs)
+def pickle_dataset(dataset, custom_dir=None):
+    resolved_vfs = dataset_vfs(dataset)
     ds_path = resolved_vfs.join(custom_dir or dataset.get_absolute_path(), ANCPBIDS_PICKLE_FILE)
     resolved_vfs.write_bytes(ds_path, _dump_dataset(dataset))
 
@@ -40,7 +40,9 @@ def pickle_dataset(dataset, custom_dir=None, vfs=None):
 def unpickle_dataset(dataset_path, vfs=None) -> Dataset:
     resolved_vfs = resolve_vfs(vfs)
     ds_path = resolved_vfs.join(dataset_path, ANCPBIDS_PICKLE_FILE)
-    return _load_dataset(resolved_vfs.read_bytes(ds_path))
+    ds = _load_dataset(resolved_vfs.read_bytes(ds_path))
+    ds._vfs = resolved_vfs
+    return ds
 
 
 def _dump_dataset(dataset) -> bytes:

@@ -1,7 +1,6 @@
 
 
 import os
-import ancpbids
 from ancpbids import all_of, eq, entity
 from ..base_test_case import ENTITIES_DIR, DS005_DIR, SYNTHETIC_DIR
 

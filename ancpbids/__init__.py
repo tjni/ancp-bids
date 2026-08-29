@@ -12,7 +12,7 @@ from .query import BoolExpr, Select, EqExpr, AnyExpr, AllExpr, ReExpr, CustomOpE
     EntityExpr
 from .model_base import Dataset
 from .schema import Schema
-from .vfs import LocalVfs, Vfs, call_with_supported_kwargs, default_vfs, resolve_vfs
+from .vfs import LocalVfs, Vfs, call_with_supported_kwargs, dataset_vfs, default_vfs, resolve_vfs
 
 LOGGER = logging.getLogger("ancpbids")
 
@@ -89,13 +89,13 @@ def load_dataset(
         ds.options = DatasetOptions()
     ds.name = resolved_vfs.basename(base_dir)
     ds.base_dir_ = base_dir
+    ds._vfs = resolved_vfs
     dataset_plugins = get_plugins(DatasetPlugin)
     for dsplugin in dataset_plugins:
         call_with_supported_kwargs(
             dsplugin.execute,
             ds,
             schema,
-            vfs=resolved_vfs,
             paths=list(paths) if paths is not None else None,
         )
     return ds
@@ -132,7 +132,7 @@ def load_schema(base_dir: str, vfs: Optional[Vfs] = None) -> Schema:
     return model_latest
 
 
-def save_dataset(ds: object, target_dir: str, context_folder=None, *, vfs: Optional[Vfs] = None):
+def save_dataset(ds: object, target_dir: str, context_folder=None):
     """Copies the dataset graph into the provided target directory.
 
     EXPERIMENTAL/UNSTABLE
@@ -147,7 +147,6 @@ def save_dataset(ds: object, target_dir: str, context_folder=None, *, vfs: Optio
         a folder node within the dataset graph to limit to
 
     """
-    resolved_vfs = resolve_vfs(vfs)
     dataset_plugins = get_plugins(WritingPlugin)
     for dsplugin in dataset_plugins:
         call_with_supported_kwargs(
@@ -155,11 +154,10 @@ def save_dataset(ds: object, target_dir: str, context_folder=None, *, vfs: Optio
             ds,
             target_dir,
             context_folder=context_folder,
-            vfs=resolved_vfs,
         )
 
 
-def validate_dataset(dataset, *, vfs: Optional[Vfs] = None) -> ValidationPlugin.ValidationReport:
+def validate_dataset(dataset) -> ValidationPlugin.ValidationReport:
     """Validates a dataset and returns a report object containing any detected validation errors.
 
     Example:
@@ -182,13 +180,13 @@ def validate_dataset(dataset, *, vfs: Optional[Vfs] = None) -> ValidationPlugin.
     ValidationPlugin.ValidationReport
         a report object containing any detected validation errors or warning
     """
-    return _internal_validate_dataset(dataset, vfs=vfs)
+    return _internal_validate_dataset(dataset)
 
 
-def _internal_validate_dataset(dataset, plugin_acceptor=None, *, vfs: Optional[Vfs] = None):
+def _internal_validate_dataset(dataset, plugin_acceptor=None):
     validation_plugins = get_plugins(ValidationPlugin)
     report = ValidationPlugin.ValidationReport()
-    report._vfs = resolve_vfs(vfs)
+    report._vfs = dataset_vfs(dataset)
     for validation_plugin in validation_plugins:
         # if plugin is disabled, skip it
         if callable(plugin_acceptor) and not plugin_acceptor(validation_plugin):
@@ -197,7 +195,7 @@ def _internal_validate_dataset(dataset, plugin_acceptor=None, *, vfs: Optional[V
     return report
 
 
-def write_derivative(ds, derivative, *, vfs: Optional[Vfs] = None):
+def write_derivative(ds, derivative):
     """Writes the provided derivative folder to the dataset.
     Note that a 'derivatives' folder will be created if not present.
 
@@ -208,7 +206,7 @@ def write_derivative(ds, derivative, *, vfs: Optional[Vfs] = None):
     derivative:
         the derivative folder to write
     """
-    save_dataset(ds, target_dir=ds.get_absolute_path(), context_folder=derivative, vfs=vfs)
+    save_dataset(ds, target_dir=ds.get_absolute_path(), context_folder=derivative)
 
 
 # load built-in and third-party plugins from [project.entry-points."ancpbids.plugins"]

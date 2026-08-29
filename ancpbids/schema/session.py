@@ -12,12 +12,9 @@ _DATATYPE_EQ = re.compile(r"""(?:^|[\s(&|])datatype\s*==\s*['\"]([^'\"]+)['\"]""
 
 def get_session(report, dataset):
     sess = getattr(report, '_schema_session', None)
-    vfs = getattr(report, '_vfs', None)
     if sess is None or sess.dataset is not dataset:
-        sess = ValidationSession(dataset, vfs=vfs)
+        sess = ValidationSession(dataset)
         report._schema_session = sess
-    elif vfs is not None:
-        sess.vfs = vfs
     sess.report = report
     flush_pending(sess, report)
     return sess
@@ -229,12 +226,12 @@ def safe_eval_ast(ast, context):
 
 
 class ValidationSession:
-    def __init__(self, dataset, vfs=None):
-        from ancpbids.vfs import resolve_vfs
+    def __init__(self, dataset):
+        from ancpbids.vfs import dataset_vfs
         from .context import json_contents, load_columns, modalities_for
 
         self.dataset = dataset
-        self.vfs = resolve_vfs(vfs)
+        self.vfs = dataset_vfs(dataset)
         self.schema = dataset.get_schema()
         self.document = self.schema.document
         objects = self.document['objects']
@@ -257,7 +254,7 @@ class ValidationSession:
         }
         self.entity_defs = objects.get('entities') or {}
         self.files_index = FileIndex(dataset)
-        self.dataset_description = json_contents(dataset.dataset_description, vfs=self.vfs)
+        self.dataset_description = json_contents(dataset.dataset_description)
         self.suffix_rules = defaultdict(list)
         self.path_rules = []
         self.stem_rules = []
